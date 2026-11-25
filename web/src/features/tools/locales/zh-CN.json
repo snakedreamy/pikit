@@ -1,0 +1,33 @@
+{
+  "title": "本地工具箱",
+  "subtitle": "共 {{count}} 项 · 纯浏览器内存运行，按右上角 / 快速检索任意工具",
+  "filterCategoryAria": "按工具分类筛选",
+  "allCategories": "全部分类 ({{count}})",
+  "categoryOption": "{{label}} ({{count}})",
+  "onlyStarred": "收藏 ({{count}})",
+  "sectionStarred": "已收藏工具",
+  "groupCount_one": "{{count}} 项",
+  "groupCount_other": "{{count}} 项",
+  "favoriteAdd": "加入收藏",
+  "favoriteRemove": "取消收藏",
+  "backToIndex": "全部工具",
+  "loadingTool": "正在加载工具模块…",
+  "loadFailedTitle": "工具模块加载失败",
+  "retryLoad": "重新加载",
+  "unknownToolTitle": "未找到该工具",
+  "unknownToolReason": "未注册标识为“{{id}}”的本地工具，请返回工具箱总览选择。",
+  "emptyFavTitle": "暂无收藏工具",
+  "emptyFavReason": "点击任意工具卡片右上角的星标，即可将其置顶到已收藏分组。",
+  "categories": {
+    "encoding": "编码转换",
+    "crypto": "加密与哈希",
+    "tokens": "令牌与密钥",
+    "text": "文本与对比",
+    "formats": "数据格式",
+    "network": "网络与运维",
+    "datetime": "时间与调度",
+    "web": "Web 与协议",
+    "math": "进制与数值",
+    "media": "色彩与图形"
+  }
+}

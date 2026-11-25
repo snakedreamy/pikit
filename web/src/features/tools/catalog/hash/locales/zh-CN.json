@@ -1,0 +1,8 @@
+{
+  "name": "哈希摘要计算",
+  "description": "同时计算 MD5、SHA-1、SHA-256、SHA-384 与 SHA-512 摘要（支持 Hex / Base64）",
+  "keywords": "哈希, 摘要, md5, sha1, sha256, sha512",
+  "inputLabel": "输入待计算文本 (UTF-8)",
+  "fmtHex": "十六进制 (Hex)",
+  "fmtBase64": "Base64"
+}

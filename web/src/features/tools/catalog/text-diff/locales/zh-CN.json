@@ -1,0 +1,11 @@
+{
+  "name": "文本差异对比",
+  "description": "自研 Myers 行级与字符级精确对比，纯本地对比敏感配置文件",
+  "keywords": "对比, 差异, diff, 比较, 文本",
+  "leftLabel": "原始文本 (Before)",
+  "rightLabel": "修改后文本 (After)",
+  "resultLabel": "对比结果",
+  "stats": "+{{added}} 行新增 · -{{removed}} 行删除",
+  "identical": "两份文本内容完全一致",
+  "approximatedNotice": "超大块重复差异已启用快速近似对比"
+}

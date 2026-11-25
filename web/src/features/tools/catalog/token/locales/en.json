@@ -1,0 +1,15 @@
+{
+  "name": "Token & Password Generator",
+  "description": "Rejection-sampled CSPRNG secret generator with real-time Shannon entropy readout",
+  "keywords": "password, token, secret, random, entropy, csprng",
+  "lengthLabel": "Length",
+  "countLabel": "Count",
+  "upper": "A–Z Upper",
+  "lower": "a–z Lower",
+  "digits": "0–9 Digits",
+  "symbols": "Symbols",
+  "noAmbiguous": "Exclude ambiguous (0O1lI)",
+  "regenerate": "Regenerate",
+  "entropyMeta": "Pool {{pool}} chars · {{bits}} bits entropy",
+  "emptyPool": "Select at least one character set"
+}

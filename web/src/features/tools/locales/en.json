@@ -1,0 +1,33 @@
+{
+  "title": "Local Toolbox",
+  "subtitle": "{{count}} tools · 100% in-browser compute · Press / to jump to any tool",
+  "filterCategoryAria": "Filter by tool category",
+  "allCategories": "All Categories ({{count}})",
+  "categoryOption": "{{label}} ({{count}})",
+  "onlyStarred": "Starred ({{count}})",
+  "sectionStarred": "Starred Tools",
+  "groupCount_one": "{{count}} item",
+  "groupCount_other": "{{count}} items",
+  "favoriteAdd": "Star tool",
+  "favoriteRemove": "Unstar tool",
+  "backToIndex": "All Tools",
+  "loadingTool": "Loading tool module…",
+  "loadFailedTitle": "Failed to Load Tool Module",
+  "retryLoad": "Retry",
+  "unknownToolTitle": "Tool Not Found",
+  "unknownToolReason": "No local tool with ID “{{id}}” is registered.",
+  "emptyFavTitle": "No Starred Tools",
+  "emptyFavReason": "Click the star on any tool card to pin it at the top.",
+  "categories": {
+    "encoding": "Encoding & Codec",
+    "crypto": "Crypto & Hash",
+    "tokens": "Tokens & Keys",
+    "text": "Text & Diff",
+    "formats": "Data Formats",
+    "network": "Network & Ops",
+    "datetime": "Date, Time & Cron",
+    "web": "Web & HTTP",
+    "math": "Base & Math",
+    "media": "Color & QR"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "URL 编解码",
+  "description": "支持参数组件 (encodeURIComponent) 与完整链接 (encodeURI) 双模式互转",
+  "keywords": "url, 编码, 解码, 百分号, encodeuricomponent",
+  "encode": "编码",
+  "decode": "解码",
+  "modeComponent": "参数组件",
+  "modeFullUri": "完整链接",
+  "inputLabel": "输入内容",
+  "outputLabel": "转换结果",
+  "invalidError": "包含非法的百分号转义序列（如截断的 UTF-8 字节）"
+}

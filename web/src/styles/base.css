@@ -1,0 +1,174 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(75% 38% at 50% 0%, var(--ambient-top), transparent 72%),
+    radial-gradient(125% 95% at 50% 0%, transparent 58%, var(--chassis-deep) 100%),
+    var(--chassis);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.5;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+code,
+pre,
+kbd,
+.mono,
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--mint);
+  color: var(--glass);
+}
+
+/* ---------------------------------------------------------------- Z1 milled metal plate & Z-1 recessed optical well */
+.plate {
+  position: relative;
+  background: var(--plate);
+  border-radius: var(--r-plate);
+  box-shadow:
+    inset 0 1px 0 var(--plate-hi),
+    inset 0 0 0 1px var(--plate-rim),
+    0 2px 0 var(--plate-lo),
+    var(--plate-shadow);
+}
+
+.glass {
+  position: relative;
+  background: var(--glass);
+  border-radius: var(--r-glass);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 2px 6px var(--glass-shadow),
+    0 1px 0 var(--plate-hi);
+}
+
+/* Z2 foreground workbench sheet floating above a dimmed main stage */
+.sheet-plate {
+  position: relative;
+  background: var(--plate-sheet);
+  border-radius: var(--r-plate);
+  box-shadow:
+    inset 0 1px 0 var(--plate-hi),
+    inset 0 0 0 1px var(--plate-rim),
+    var(--sheet-shadow);
+}
+
+/* Silkscreen panel legend heading */
+.legend {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.legend__note {
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--ink-3);
+}
+
+/* Tactile status indicator lamp */
+.lamp {
+  display: inline-block;
+  flex: none;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--groove);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.35);
+  transition:
+    background-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.lamp[data-color='mint'] {
+  background: var(--mint);
+  box-shadow: 0 0 0.4rem var(--mint-glow);
+}
+
+.lamp[data-color='amber'] {
+  background: var(--amber);
+  box-shadow: 0 0 0.4rem var(--amber-glow);
+}
+
+.lamp[data-color='fault'] {
+  background: var(--fault);
+  box-shadow: 0 0 0.4rem var(--fault-glow);
+}
+
+.lamp[data-color='dim'] {
+  background: var(--ink-3);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

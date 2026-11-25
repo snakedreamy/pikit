@@ -1,0 +1,14 @@
+{
+  "title": "受保护控制台",
+  "subtitle": "当前实例已启用访问验证，请登录以查看节点与遥测信息",
+  "username": "用户名",
+  "usernamePlaceholder": "输入配置中的用户名",
+  "password": "访问密码",
+  "passwordPlaceholder": "输入访问密码",
+  "submit": "解锁进入",
+  "submitting": "校验中…",
+  "invalid": "用户名或密码不正确",
+  "rateLimited": "尝试次数过多，请稍候一分钟再试",
+  "networkError": "无法连接服务，请稍后重试",
+  "required": "请输入用户名与密码"
+}

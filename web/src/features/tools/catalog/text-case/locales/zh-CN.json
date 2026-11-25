@@ -1,0 +1,12 @@
+{
+  "name": "字数统计与命名转换",
+  "description": "统计 Unicode 字符、UTF-8 字节、词数与行数，并一键转换为驼峰、下划线、短横线等命名格式",
+  "keywords": "字数, 统计, 字节, 驼峰, 下划线, 大小写, camel, snake, kebab",
+  "inputLabel": "输入文本或标识符",
+  "statChars": "总字符数",
+  "statNoSpace": "非空字符",
+  "statBytes": "UTF-8 字节",
+  "statWords": "词 / 汉字数",
+  "statLines": "行数",
+  "casesLabel": "命名格式一键转换"
+}

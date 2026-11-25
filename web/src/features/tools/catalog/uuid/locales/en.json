@@ -1,0 +1,12 @@
+{
+  "name": "UUID v4 / v7 Generator",
+  "description": "Batch generate random UUIDv4 and time-sortable RFC 9562 UUIDv7 identifiers",
+  "keywords": "uuid, guid, v4, v7, rfc9562, id",
+  "verV7": "UUID v7 (Sortable)",
+  "verV4": "UUID v4 (Random)",
+  "countLabel": "Batch Size",
+  "uppercase": "Uppercase",
+  "hyphens": "Hyphens",
+  "regenerate": "Regenerate",
+  "outputLabel": "Generated Identifiers"
+}

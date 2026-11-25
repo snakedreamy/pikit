@@ -1,0 +1,23 @@
+# Local workspace notes and AI rules (never committed)
+AGENTS.md
+PLAN.md
+
+# Rust build artifacts
+/target/
+
+# Frontend dependencies, build output, and test reports
+/web/node_modules/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
+
+# Local runtime configs, environment files, and logs (prevent credential leaks)
+config.toml
+config.local.toml
+*.log
+.env
+.env.*
+
+# User-supplied third-party bookmark icons (keep only the directory guide)
+/icons/*
+!/icons/README.md

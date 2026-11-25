@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 84" width="400" height="84" fill="none" role="img" aria-label="pikbay">
+  <g transform="translate(18, 12) scale(2.5)">
+    <rect x="2.5" y="2" width="4.5" height="20" rx="1.4" fill="#f2ece0"/>
+    <path d="M9.9 2H15A6.5 6.5 0 0 1 15 15H9.9A0.9 0.9 0 0 1 9 14.1V11.5A0.9 0.9 0 0 1 9.9 10.6H14.8A2.1 2.1 0 0 0 14.8 6.4H9.9A0.9 0.9 0 0 1 9 5.5V2.9A0.9 0.9 0 0 1 9.9 2Z" fill="#f2ece0"/>
+    <circle cx="11.25" cy="19.75" r="2.25" fill="#f7b23b"/>
+    <rect x="15.5" y="17.5" width="6" height="4.5" rx="1.4" fill="#6be8cb"/>
+  </g>
+  <text x="94" y="48" fill="#f2ece0" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="40" font-weight="800" letter-spacing="2.4">pikbay</text>
+  <text x="96" y="68" fill="#8b96a5" font-family="ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace" font-size="10.5" font-weight="600" letter-spacing="1.6">STARTPAGE · SPEEDTEST · LOCAL TOOLBOX</text>
+</svg>

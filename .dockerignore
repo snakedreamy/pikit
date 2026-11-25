@@ -1,0 +1,31 @@
+# Git metadata, CI workflows, and documentation (excluded from container build context)
+.git
+.gitignore
+.gitattributes
+.github
+docs
+AGENTS.md
+PLAN.md
+LICENSE
+README.md
+README.zh-CN.md
+SECURITY.md
+CHANGELOG.md
+
+# Rust build artifacts
+target/
+
+# Frontend dependencies, build output, and test reports
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+
+# Local runtime configs, environment files, and logs (prevent host secrets from entering build context)
+config.toml
+config.local.toml
+*.log
+.env
+.env.*
+icons/*
+!icons/README.md

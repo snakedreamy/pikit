@@ -1,0 +1,8 @@
+{
+  "name": "Color Space Converter",
+  "description": "Convert between HEX, RGB, HSL, and perceptually uniform OKLCH with live swatch preview",
+  "keywords": "color, hex, rgb, hsl, oklch, palette",
+  "inputLabel": "Color Value (#f6b032 / rgb(...) / hsl(...) / oklch(...))",
+  "pickerLabel": "Color Picker",
+  "invalid": "Unrecognized color syntax"
+}

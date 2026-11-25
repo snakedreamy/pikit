@@ -1,0 +1,12 @@
+{
+  "name": "JSON 格式化校验",
+  "description": "缩进美化、单行压缩与语法错误精确行列定位",
+  "keywords": "json, 格式化, 压缩, 校验, 美化",
+  "indent2": "2 空格",
+  "indent4": "4 空格",
+  "indentTab": "Tab 缩进",
+  "minify": "单行压缩",
+  "inputLabel": "原始 JSON",
+  "outputLabel": "格式化结果",
+  "errorAt": "第 {{line}} 行，第 {{column}} 列语法错误：{{message}}"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "UUID v4 / v7 生成",
+  "description": "批量生成随机 UUID v4 与时间单调有序的 RFC 9562 UUID v7",
+  "keywords": "uuid, guid, v4, v7, 唯一标识",
+  "verV7": "UUID v7 (时间有序)",
+  "verV4": "UUID v4 (纯随机)",
+  "countLabel": "生成数量",
+  "uppercase": "大写字母",
+  "hyphens": "保留连字符",
+  "regenerate": "重新生成",
+  "outputLabel": "生成结果"
+}

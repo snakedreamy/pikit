@@ -1,0 +1,22 @@
+{
+  "name": "Base64 Codec",
+  "description": "UTF-8 text & local file Base64 / Base64URL codec with binary download",
+  "keywords": "encode, decode, base64url, utf8",
+  "modeEncode": "Encode",
+  "modeDecode": "Decode",
+  "variantStandard": "Standard (+/)",
+  "variantUrlSafe": "URL-Safe (-_)",
+  "pickFile": "Load Local File",
+  "downloadDecoded": "Download Binary",
+  "fileLoaded": "Loaded {{name}} ({{size}})",
+  "inputEncode": "Plaintext Input (UTF-8)",
+  "inputDecode": "Base64 Input",
+  "outputLabel": "Output",
+  "placeholderEncode": "Enter UTF-8 text or load a local file above…",
+  "placeholderDecode": "Paste standard or URL-safe Base64…",
+  "bytes_one": "{{count}} byte",
+  "bytes_other": "{{count}} bytes",
+  "chars_one": "{{count}} char",
+  "chars_other": "{{count}} chars",
+  "invalidBase64": "Invalid Base64 or binary payload (use 'Download Binary' above for non-UTF8 files)"
+}

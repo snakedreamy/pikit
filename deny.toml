@@ -1,0 +1,38 @@
+# cargo-deny policy: permissive third-party license allowlist, advisory checks, and crate source constraints
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "0BSD",
+    "CC0-1.0",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]
+
+[licenses.private]
+# Keep third-party crate allowlist strictly permissive while the workspace root itself uses AGPL-3.0-only (publish = false)
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

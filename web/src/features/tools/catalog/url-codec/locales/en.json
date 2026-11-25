@@ -1,0 +1,12 @@
+{
+  "name": "URL Codec",
+  "description": "Encode and decode URI components or full URLs with UTF-8 support",
+  "keywords": "url, uri, percent, encodeuricomponent, query",
+  "encode": "Encode",
+  "decode": "Decode",
+  "modeComponent": "Component",
+  "modeFullUri": "Full URI",
+  "inputLabel": "Source Input",
+  "outputLabel": "Output",
+  "invalidError": "Malformed percent-encoded UTF-8 sequence"
+}

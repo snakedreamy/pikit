@@ -1,0 +1,19 @@
+{
+  "title": "Design System & State Verification",
+  "subtitle": "Inspect symmetric startpage (multi-core/multi-disk + icon fallback), scalable tools matrix, 3-tier speedtest, and optional login gate",
+  "tabDashboard": "Startpage (Multi-Core & Icons)",
+  "tabTools": "Tools Matrix (100+ Scale)",
+  "tabSpeedtest": "Speedtest + Local History",
+  "tabLogin": "Login Gate ([auth] Enabled)",
+  "diskSystem": "System",
+  "diskZfs": "ZFS Pool",
+  "groupCore": "Core Services",
+  "groupInfra": "Infrastructure & Storage",
+  "descJellyfin": "Home media & HW transcoding",
+  "descGitea": "Self-hosted Git & CI runner",
+  "descProxmox": "Hypervisor & cluster nodes",
+  "descCaddy": "Edge reverse proxy & TLS",
+  "descTruenas": "ZFS storage pool & snapshots",
+  "nameRouter": "Core Router",
+  "descRouter": "Policy routing, VLANs & firewall"
+}

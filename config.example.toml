@@ -1,0 +1,103 @@
+# pikbay example configuration (loaded read-only at startup)
+# Default path: ./config.toml (override via the PIKBAY_CONFIG environment variable)
+# Security note: Defaults target localhost (127.0.0.1) or trusted private networks.
+# Before exposing pikbay to the public internet behind an HTTPS reverse proxy, enable [auth],
+# configure server.trusted_proxies accurately, and set server.allowed_hosts.
+
+version = 1                       # Schema version; startup aborts if this does not match the binary's supported version
+
+[server]
+listen = "127.0.0.1:8080"
+trusted_proxies = ["127.0.0.1/32", "::1/128"]   # X-Forwarded-For / X-Forwarded-Proto / X-Forwarded-Host are honored only from these CIDRs
+allowed_hosts = []                # Optional Host allowlist (e.g. ["pikbay.example.com"]); rejects direct IP scans and unknown Host headers when non-empty
+icons_dir = "./icons"             # Directory for custom bookmark icons (.svg / .png / .webp / .ico), served same-origin at /icons/<file>
+
+[auth]                            # Optional single-user authentication gate (disabled by default for private LAN; enable for public deployments)
+enabled = false
+username = "admin"
+# Supply exactly one password source when enabled (or inject via PIKBAY_AUTH_PASSWORD / PIKBAY_AUTH_PASSWORD_HASH):
+# 1) Recommended for production: generate an Argon2id PHC hash with `pikbay hash-password`
+# password_hash = "$argon2id$v=19$m=19456,t=2,p=1$..."
+# 2) Plaintext convenience option: restrict file permissions (chmod 600); hashed into Argon2id in memory at startup
+# password = "your-strong-password"
+session_ttl_hours = 168           # Session cookie lifetime in hours (default: 7 days)
+
+[ui]
+title = "pikbay"
+
+[system]                          # Live hardware telemetry strip below the top bar (works on bare metal and containers; disable globally or per metric)
+enabled = true
+cpu = true
+per_core = true                   # Show real-time per-core load bars
+memory = true
+storage = true                    # Auto-discovers real mounted disks (UFS / NVMe / SD / eMMC / SSD / HDD / ZFS / NAS) when [[system.disks]] is omitted
+refresh_seconds = 1               # Polling interval in seconds (automatically paused while the browser tab is hidden)
+
+# Optional manual override: omit [[system.disks]] to auto-discover real disks, or uncomment to pin specific mount points and labels
+# [[system.disks]]
+# path = "/"
+# label = "System"
+
+[speedtest]
+enabled = true
+max_download_mb = 256             # Per-request download stream cap (MiB)
+max_upload_mb = 64                # Per-request upload body cap (MiB)
+per_ip_concurrency = 8            # Maximum concurrent speedtest streams per client IP
+global_concurrency = 32           # Maximum concurrent speedtest streams across all clients
+per_ip_requests_per_minute = 600  # Maximum speedtest requests per minute per client IP
+daily_quota_gb = 200              # Global daily speedtest traffic quota (GiB); 0 = unlimited
+
+[[groups]]
+name = "Core Services"
+
+[[groups.items]]
+name = "Jellyfin"
+url = "https://media.example.ts.net"
+description = "Home media streaming & hardware transcoding"
+# icon = "jellyfin.svg"           # Optional: drop a custom icon into ./icons/ and uncomment; falls back to monogram badge otherwise
+icon_text = "JF"
+
+[[groups.items]]
+name = "Forgejo"
+url = "https://git.example.ts.net"
+description = "Self-hosted Git repositories & CI runners"
+icon_text = "FG"
+
+[[groups.items]]
+name = "Vaultwarden"
+url = "https://vault.example.ts.net"
+description = "Encrypted password & passkey vault"
+# Omit `icon` and `icon_text` to derive an automatic monogram ("VW") from the service name
+
+[[groups.items]]
+name = "Immich"
+url = "https://photos.example.ts.net"
+description = "Self-hosted photo & video backup timeline"
+icon_text = "IM"
+
+[[groups]]
+name = "Network & Infrastructure"
+
+[[groups.items]]
+name = "Caddy Gateway"
+url = "https://gw.example.ts.net"
+description = "Edge reverse proxy & automatic TLS certificates"
+icon_text = "CG"
+
+[[groups.items]]
+name = "TrueNAS Scale"
+url = "https://nas.example.ts.net"
+description = "ZFS storage pools & scheduled snapshots"
+icon_text = "NAS"                 # Custom 1-3 character silkscreen monogram badge
+
+[[groups.items]]
+name = "AdGuard Home"
+url = "https://dns.example.ts.net"
+description = "Authoritative LAN DNS resolver & filter"
+icon_text = "DNS"
+
+[[groups.items]]
+name = "Proxmox VE"
+url = "https://pve.example.ts.net"
+description = "Hypervisor cluster & container nodes"
+# Omit `icon` and `icon_text` to derive an automatic monogram ("PV") from the service name

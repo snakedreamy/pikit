@@ -1,0 +1,12 @@
+{
+  "name": "JWT Inspector",
+  "description": "Decode JWT header and payload offline with local timezone exp/iat timestamps (no signature verification)",
+  "keywords": "jwt, json web token, claims, bearer, decode",
+  "inputLabel": "JWT String (Bearer prefix stripped automatically; decoded offline without signature verification)",
+  "headerLabel": "Header",
+  "payloadLabel": "Payload Claims",
+  "statusValid": "Active (exp: {{time}})",
+  "statusExpired": "Expired (exp: {{time}})",
+  "iatMeta": "Issued at (iat): {{time}}",
+  "invalid": "Malformed JWT (expected 3 dot-separated Base64URL JSON segments)"
+}

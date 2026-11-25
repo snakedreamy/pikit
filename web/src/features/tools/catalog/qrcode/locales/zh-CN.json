@@ -1,0 +1,14 @@
+{
+  "name": "二维码生成",
+  "description": "纯浏览器本地生成 UTF-8 二维码（零服务端上传），支持四级容错率调节与无损 SVG / 高清 PNG 导出",
+  "keywords": "二维码, 扫码, qr, qrcode, svg, png, wifi",
+  "inputLabel": "文本、链接或配置内容",
+  "eccLabel": "容错级别 (ECC)",
+  "borderLabel": "静区留白",
+  "previewLabel": "扫码预览",
+  "emptyHint": "输入任意内容后在本地即时生成二维码",
+  "metaInfo": "版本 V{{version}} · {{size}}×{{size}} 模块 · {{bytes}} B UTF-8",
+  "downloadSvg": "导出 SVG",
+  "downloadPng": "导出 PNG",
+  "tooLong": "输入数据超出二维码最大容量（Version 40），请精简内容或调低容错级别"
+}

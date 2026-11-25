@@ -1,0 +1,14 @@
+{
+  "name": "HMAC Generator",
+  "description": "Compute keyed-hash message authentication codes with SHA-1/256/384/512",
+  "keywords": "hmac, signature, mac, sha256, sha512",
+  "secretLabel": "Secret Key",
+  "keyUtf8": "Key UTF-8",
+  "keyHex": "Key Hex",
+  "outHex": "Out Hex",
+  "outBase64": "Out Base64",
+  "inputLabel": "Message Payload",
+  "outputLabel": "HMAC Digest",
+  "errEmptyKey": "Enter a non-empty secret key",
+  "errHexKey": "Hex key must contain an even number of 0–9 / a–f digits"
+}

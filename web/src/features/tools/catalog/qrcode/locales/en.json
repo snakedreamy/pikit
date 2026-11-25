@@ -1,0 +1,14 @@
+{
+  "name": "QR Code Generator",
+  "description": "100% in-browser UTF-8 QR code generator with L/M/Q/H error correction and crisp SVG / PNG export",
+  "keywords": "qr, qrcode, barcode, svg, png, matrix",
+  "inputLabel": "Text, URL, or Payload",
+  "eccLabel": "Error Correction (ECC)",
+  "borderLabel": "Quiet Zone",
+  "previewLabel": "Scan Preview",
+  "emptyHint": "Enter text above to render a QR code locally",
+  "metaInfo": "Version {{version}} · {{size}}×{{size}} modules · {{bytes}} B UTF-8",
+  "downloadSvg": "Export SVG",
+  "downloadPng": "Export PNG",
+  "tooLong": "Payload exceeds maximum QR Version 40 capacity; shorten the text or lower the ECC level"
+}

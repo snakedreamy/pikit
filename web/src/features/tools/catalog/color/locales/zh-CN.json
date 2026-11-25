@@ -1,0 +1,8 @@
+{
+  "name": "颜色空间转换",
+  "description": "支持 HEX、RGB、HSL 与现代感知均匀空间 OKLCH 双向互转与实时色板预览",
+  "keywords": "颜色, 色值, hex, rgb, hsl, oklch",
+  "inputLabel": "输入颜色值（支持 #f6b032 / rgb(...) / hsl(...) / oklch(...)）",
+  "pickerLabel": "拾色器",
+  "invalid": "无法识别该颜色格式"
+}

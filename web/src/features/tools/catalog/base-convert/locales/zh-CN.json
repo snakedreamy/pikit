@@ -1,0 +1,14 @@
+{
+  "name": "进制转换",
+  "description": "基于 BigInt 支持超大整数在 2 / 8 / 10 / 16 与自定义 2–36 进制间无损互转",
+  "keywords": "进制, 二进制, 十六进制, 八进制, 十进制, bigint",
+  "inputLabel": "输入整数（支持下划线分隔符）",
+  "sourceBase": "输入进制",
+  "customBase": "自定义输出进制 (2–36)",
+  "invalid": "输入包含超出当前进制范围的字符",
+  "bin": "二进制 (Base 2)",
+  "oct": "八进制 (Base 8)",
+  "dec": "十进制 (Base 10)",
+  "hex": "十六进制 (Base 16)",
+  "customOut": "自定义 ({{base}} 进制)"
+}

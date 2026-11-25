@@ -1,0 +1,11 @@
+{
+  "name": "Text Diff",
+  "description": "Myers line-level and inline character-level diff computed 100% locally",
+  "keywords": "diff, compare, myers, patch, lines",
+  "leftLabel": "Original Text (Before)",
+  "rightLabel": "Modified Text (After)",
+  "resultLabel": "Unified Diff",
+  "stats": "+{{added}} added · -{{removed}} removed",
+  "identical": "Both texts are identical",
+  "approximatedNotice": "Fast linear approximation used for oversized repetitive hunk"
+}

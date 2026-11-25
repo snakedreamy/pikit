@@ -1,0 +1,322 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-dist:
+    name: Build Frontend Assets
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Verify guards, tests & build SPA bundle
+        working-directory: web
+        run: |
+          npm ci
+          npm run lint:guards
+          npm run check
+          npm test
+          npm run build
+
+      - name: Upload built web/dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist/
+          if-no-files-found: error
+
+  build-binaries:
+    name: Build Release Binary (${{ matrix.target }})
+    needs: web-dist
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+            musl: true
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: tar.gz
+            musl: true
+          - runner: macos-15-intel
+            target: aarch64-apple-darwin
+            archive: tar.gz
+            musl: false
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: tar.gz
+            musl: false
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            musl: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install musl-tools on Linux
+        if: matrix.musl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry and target build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Download prebuilt web/dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      - name: Run host Rust test suite
+        if: matrix.target != 'aarch64-apple-darwin'
+        shell: bash
+        env:
+          RUSTFLAGS: -D warnings
+        run: cargo test --locked
+
+      - name: Compile release single binary
+        shell: bash
+        env:
+          PIKBAY_BUILD_COMMIT: ${{ github.sha }}
+          RUSTFLAGS: ${{ matrix.musl && '-C target-feature=+crt-static -C strip=symbols -D warnings' || '-C strip=symbols -D warnings' }}
+        run: |
+          SHORT_SHA="${PIKBAY_BUILD_COMMIT:0:8}"
+          PIKBAY_BUILD_COMMIT="${SHORT_SHA}" cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Package release archive (Unix tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          PKG_NAME="pikbay-${VERSION}-${{ matrix.target }}"
+          STAGE_DIR="dist-pkg/${PKG_NAME}"
+          mkdir -p "${STAGE_DIR}/icons"
+          cp "target/${{ matrix.target }}/release/pikbay" "${STAGE_DIR}/pikbay"
+          chmod 0755 "${STAGE_DIR}/pikbay"
+          cp config.example.toml LICENSE README.md README.zh-CN.md "${STAGE_DIR}/"
+          cp icons/README.md "${STAGE_DIR}/icons/README.md"
+          mkdir -p release-out
+          tar -C dist-pkg -czf "release-out/${PKG_NAME}.tar.gz" "${PKG_NAME}"
+
+      - name: Package release archive (Windows zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $Version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
+          $PkgName = "pikbay-$Version-${{ matrix.target }}"
+          $StageDir = Join-Path "dist-pkg" $PkgName
+          New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "icons") | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/pikbay.exe" (Join-Path $StageDir "pikbay.exe")
+          Copy-Item config.example.toml, LICENSE, README.md, README.zh-CN.md -Destination $StageDir
+          Copy-Item icons/README.md -Destination (Join-Path $StageDir "icons/README.md")
+          New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
+          Compress-Archive -Path $StageDir -DestinationPath "release-out/$PkgName.zip" -Force
+
+      - name: Upload packaged binary archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release-out/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release & Provenance
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-binaries
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download all release archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist-release
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        working-directory: dist-release
+        run: sha256sum pikbay-* > SHA256SUMS.txt
+
+      - name: Attest SLSA build provenance for release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist-release/*'
+
+      - name: Create GitHub Release with official gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "pikbay ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist-release/*
+
+  build-container:
+    name: Build Native Container (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            arch_slug: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch_slug: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Normalize lowercase GHCR image name & short commit
+        id: vars
+        run: |
+          IMAGE_LOWER=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=${IMAGE_LOWER}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build container image (and push by digest on release tags)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            PIKBAY_BUILD_COMMIT=${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          outputs: ${{ startsWith(github.ref, 'refs/tags/v') && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.vars.outputs.image) || 'type=docker' }}
+          cache-from: type=gha,scope=container-${{ matrix.arch_slug }}
+          cache-to: type=gha,mode=max,scope=container-${{ matrix.arch_slug }}
+
+      - name: Export pushed image digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+
+      - name: Upload digest artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-digest-${{ matrix.arch_slug }}
+          path: digests/*
+          if-no-files-found: error
+
+  merge-container-manifest:
+    name: Publish Multi-Arch GHCR Manifest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-container
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Normalize lowercase GHCR image name
+        id: vars
+        run: |
+          IMAGE_LOWER=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=${IMAGE_LOWER}" >> "$GITHUB_OUTPUT"
+
+      - name: Download per-arch digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: container-digest-*
+          path: digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract OCI metadata & version tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.vars.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Create & push multi-arch manifest list
+        id: merge
+        working-directory: digests
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$META_JSON") \
+            $(printf '${{ steps.vars.outputs.image }}@sha256:%s ' *)
+
+      - name: Inspect published multi-arch manifest digest
+        id: inspect
+        run: |
+          MANIFEST_DIGEST=$(docker buildx imagetools inspect "${{ steps.vars.outputs.image }}:${GITHUB_REF_NAME#v}" --format "{{json .Manifest}}" | jq -r .digest)
+          echo "digest=${MANIFEST_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest container image provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.vars.outputs.image }}
+          subject-digest: ${{ steps.inspect.outputs.digest }}
+          push-to-registry: true

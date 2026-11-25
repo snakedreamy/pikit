@@ -1,0 +1,56 @@
+{
+  "app": {
+    "skipToContent": "Skip to main content"
+  },
+  "nav": {
+    "primary": "Workspace switcher",
+    "dashboard": "Start",
+    "tools": "Tools",
+    "speedtest": "Speed",
+    "devUi": "Spec"
+  },
+  "navKeywords": {
+    "dashboard": "home, startpage, bookmarks",
+    "tools": "toolbox, utilities",
+    "speedtest": "bandwidth, ping, jitter",
+    "devUi": "spec, ui, showcase"
+  },
+  "topbar": {
+    "searchShort": "Search",
+    "searchTrigger": "Search bookmarks and local tools",
+    "language": "Language",
+    "themeAria": "Theme",
+    "themeSystem": "System",
+    "themeDark": "Dark",
+    "themeLight": "Light",
+    "logout": "Sign out"
+  },
+  "palette": {
+    "title": "Quick Jump",
+    "placeholder": "Type service name, host, or tool keyword…",
+    "emptyTitle": "No matches",
+    "emptyReason": "No service, tool, or workspace matches “{{query}}”",
+    "groupNav": "Workspaces",
+    "groupTools": "Local Tools",
+    "groupBookmarks": "Services",
+    "hintNavigate": "↑↓ Select",
+    "hintOpen": "↵ Open",
+    "hintClose": "Esc Close",
+    "result_one": "{{count}} item",
+    "result_other": "{{count}} items"
+  },
+  "common": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed: clipboard unavailable",
+    "close": "Close",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "backHome": "Back to Start"
+  },
+  "placeholders": {
+    "notFoundTitle": "404 · Unknown Route",
+    "notFoundReason": "Path “{{path}}” does not exist. Return to the startpage."
+  }
+}

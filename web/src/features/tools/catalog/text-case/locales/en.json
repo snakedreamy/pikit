@@ -1,0 +1,12 @@
+{
+  "name": "Text Stats & Case Converter",
+  "description": "Count Unicode characters, UTF-8 bytes, words & lines, and convert across camel, snake, kebab, and constant cases",
+  "keywords": "case, camel, snake, kebab, pascal, word count, bytes, stats",
+  "inputLabel": "Input Text or Identifier",
+  "statChars": "Characters",
+  "statNoSpace": "Non-Whitespace",
+  "statBytes": "UTF-8 Bytes",
+  "statWords": "Words / CJK",
+  "statLines": "Lines",
+  "casesLabel": "Naming Convention Conversions"
+}

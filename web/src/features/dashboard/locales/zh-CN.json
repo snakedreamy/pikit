@@ -1,0 +1,20 @@
+{
+  "telemetryAria": "系统硬件状态",
+  "cpu": "处理器",
+  "cores_one": "{{count}} 核",
+  "cores_other": "{{count}} 核",
+  "coreTooltip": "核心 {{index}}：{{percent}}%",
+  "coreRangeTooltip": "核心 {{start}}–{{end}}：均值 {{percent}}%",
+  "memory": "内存",
+  "storage": "存储",
+  "selectDiskAria": "切换查看存储设备",
+  "sourceCgroup": "容器配额限制 (cgroup v2)",
+  "sourceHost": "整机硬件实时读数 (/proc)",
+  "telemetryError": "系统资源读取失败：{{reason}}",
+  "groupCount_one": "{{count}} 项",
+  "groupCount_other": "{{count}} 项",
+  "emptyTitle": "未配置服务书签",
+  "emptyReason": "请在 config.toml 的 [[groups]] 段添加常用节点与自定义图标。",
+  "loadFailedTitle": "书签加载失败",
+  "diskError": "挂载点不可读：{{reason}}"
+}

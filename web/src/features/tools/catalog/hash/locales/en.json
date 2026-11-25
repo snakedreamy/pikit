@@ -1,0 +1,8 @@
+{
+  "name": "Hash Digest",
+  "description": "Compute MD5, SHA-1, SHA-256, SHA-384, and SHA-512 digests simultaneously",
+  "keywords": "hash, digest, md5, sha1, sha256, sha512",
+  "inputLabel": "Input Text (UTF-8)",
+  "fmtHex": "Hexadecimal",
+  "fmtBase64": "Base64"
+}

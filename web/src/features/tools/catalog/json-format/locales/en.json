@@ -1,0 +1,12 @@
+{
+  "name": "JSON Formatter",
+  "description": "Prettify, minify, and validate JSON with line & column error pinpointing",
+  "keywords": "json, prettify, minify, validate, lint",
+  "indent2": "2 Spaces",
+  "indent4": "4 Spaces",
+  "indentTab": "Tabs",
+  "minify": "Minify",
+  "inputLabel": "Raw JSON",
+  "outputLabel": "Formatted Output",
+  "errorAt": "Syntax error at line {{line}}, column {{column}}: {{message}}"
+}

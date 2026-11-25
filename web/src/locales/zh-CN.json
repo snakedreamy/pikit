@@ -1,0 +1,56 @@
+{
+  "app": {
+    "skipToContent": "跳至主内容"
+  },
+  "nav": {
+    "primary": "工作区切换",
+    "dashboard": "导航",
+    "tools": "工具箱",
+    "speedtest": "测速",
+    "devUi": "样板"
+  },
+  "navKeywords": {
+    "dashboard": "首页, 导航, 书签",
+    "tools": "工具箱, 本地工具",
+    "speedtest": "测速, 延迟, 带宽",
+    "devUi": "样板, 设计规范"
+  },
+  "topbar": {
+    "searchShort": "搜索",
+    "searchTrigger": "搜索书签与本地工具",
+    "language": "界面语言",
+    "themeAria": "外观主题",
+    "themeSystem": "跟随系统",
+    "themeDark": "深色主题",
+    "themeLight": "浅色主题",
+    "logout": "退出"
+  },
+  "palette": {
+    "title": "全局快搜",
+    "placeholder": "输入服务名、域名或工具关键词…",
+    "emptyTitle": "无匹配项",
+    "emptyReason": "未找到与“{{query}}”匹配的服务、工具或工作区",
+    "groupNav": "工作区",
+    "groupTools": "本地工具",
+    "groupBookmarks": "服务书签",
+    "hintNavigate": "↑↓ 选择",
+    "hintOpen": "↵ 打开",
+    "hintClose": "Esc 关闭",
+    "result_one": "{{count}} 项",
+    "result_other": "{{count}} 项"
+  },
+  "common": {
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "复制失败：无剪贴板权限",
+    "close": "关闭",
+    "confirm": "确认",
+    "cancel": "取消",
+    "clear": "清空",
+    "backHome": "返回导航页"
+  },
+  "placeholders": {
+    "notFoundTitle": "404 · 页面不存在",
+    "notFoundReason": "未找到路径“{{path}}”，请检查链接或返回导航首页。"
+  }
+}

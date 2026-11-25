@@ -1,0 +1,14 @@
+{
+  "name": "Number Base Converter",
+  "description": "Arbitrary-precision BigInt radix conversion across binary, octal, decimal, hex, and base 2–36",
+  "keywords": "radix, binary, hex, octal, decimal, base36",
+  "inputLabel": "Integer Value (underscores allowed)",
+  "sourceBase": "Input Base",
+  "customBase": "Custom Output Base (2–36)",
+  "invalid": "Input contains digits outside the selected base",
+  "bin": "Binary (Base 2)",
+  "oct": "Octal (Base 8)",
+  "dec": "Decimal (Base 10)",
+  "hex": "Hexadecimal (Base 16)",
+  "customOut": "Custom (Base {{base}})"
+}

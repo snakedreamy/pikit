@@ -1,0 +1,50 @@
+name: Bug Report
+description: "Report a reproducible defect in pikbay (note: feature requests and PRs are not accepted)"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **Before submitting:** `pikbay` is a personally maintained project. Reproducible bug reports are welcome on a best-effort basis, while feature requests and pull requests are not accepted (see [CONTRIBUTING.md](../CONTRIBUTING.md)).
+        > **Never paste real passwords, hashes, cookies, or private domains** into an issue.
+  - type: input
+    id: version
+    attributes:
+      label: pikbay Version & Commit
+      description: Output of `pikbay --version` or the bottom footer string in the web UI.
+      placeholder: "pikbay 0.1.0 (abcd1234)"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Method
+      options:
+        - Prebuilt binary / systemd (Linux)
+        - Container (Docker / Podman / Quadlet)
+        - Built from source
+        - macOS / Windows binary
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Architecture & Browser
+      placeholder: "Debian 13 arm64 · Firefox 136 / Chrome 135"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Minimal Reproduction Steps
+      description: Exact steps and sanitized `config.toml` snippet needed to reproduce the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual vs. Expected Behavior
+      description: What happened, what you expected instead, and any relevant sanitized log lines.
+    validations:
+      required: true

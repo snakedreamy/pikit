@@ -1,0 +1,15 @@
+{
+  "name": "密码 / Token 生成",
+  "description": "基于 CSPRNG 拒绝采样的无偏随机密钥生成，实时计算香农熵值",
+  "keywords": "密码, 密钥, token, 随机, 熵值",
+  "lengthLabel": "长度",
+  "countLabel": "数量",
+  "upper": "A–Z 大写",
+  "lower": "a–z 小写",
+  "digits": "0–9 数字",
+  "symbols": "特殊符号",
+  "noAmbiguous": "排除易混字符 (0O1lI)",
+  "regenerate": "重新生成",
+  "entropyMeta": "字符池 {{pool}} 个 · 熵值 {{bits}} bits",
+  "emptyPool": "请至少勾选一种字符集"
+}

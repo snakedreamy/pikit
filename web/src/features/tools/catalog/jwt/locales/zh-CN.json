@@ -1,0 +1,12 @@
+{
+  "name": "JWT 载荷解码",
+  "description": "纯离线解析 JWT Header 与 Payload JSON，自动将 exp / iat 换算为本地时间",
+  "keywords": "jwt, token, 令牌, 解码, bearer",
+  "inputLabel": "粘贴 JWT 字符串（支持自动剥离 Bearer 前缀，本工具仅离线解码不校验签名）",
+  "headerLabel": "Header (头部)",
+  "payloadLabel": "Payload (声明载荷)",
+  "statusValid": "未过期 (exp: {{time}})",
+  "statusExpired": "已过期 (exp: {{time}})",
+  "iatMeta": "签发时间 (iat)：{{time}}",
+  "invalid": "无效的 JWT 结构（需为三段 Base64URL JSON）"
+}

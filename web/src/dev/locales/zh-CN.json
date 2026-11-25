@@ -1,0 +1,19 @@
+{
+  "title": "设计规范与全状态核验台",
+  "subtitle": "预览导航页（多核/多盘 + 自定义图标/文字兜底）、百级扩展工具矩阵、三段式测速台与可选登录门禁",
+  "tabDashboard": "导航页（多核/多盘 + 图标兜底）",
+  "tabTools": "工具矩阵（百级扩展布局）",
+  "tabSpeedtest": "测速台（含浏览器历史）",
+  "tabLogin": "登录门禁（[auth] 开启态）",
+  "diskSystem": "系统",
+  "diskZfs": "ZFS 池",
+  "groupCore": "核心服务",
+  "groupInfra": "基础设施与存储",
+  "descJellyfin": "家庭影音媒体库与硬件转码",
+  "descGitea": "私有代码仓库与持续集成",
+  "descProxmox": "虚拟化宿主机与节点集群",
+  "descCaddy": "边缘反向代理与自动证书",
+  "descTruenas": "ZFS 存储阵列与快照备份",
+  "nameRouter": "内网主路由",
+  "descRouter": "策略路由、VLAN 与防火墙"
+}

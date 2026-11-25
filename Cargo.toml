@@ -1,0 +1,39 @@
+[package]
+name = "pikbay"
+version = "0.1.0"
+edition = "2021"
+description = "Self-hosted single-binary personal startpage, real-time speedtest, and local-only IT toolbox"
+license = "AGPL-3.0-only"
+repository = "https://github.com/snakedreamy/pikbay"
+readme = "README.md"
+publish = false
+
+[dependencies]
+argon2 = { version = "0.5", features = ["std"] }
+axum = "0.8.9"
+base64ct = { version = "1.6", features = ["alloc"] }
+bytes = "1.10"
+futures-util = "0.3"
+governor = "0.10"
+hmac = "0.12"
+jiff = "0.2"
+mime_guess = "2.0"
+rand = "0.9"
+rust-embed = "8.14.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+subtle = "2.6"
+thiserror = "2.0"
+tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-std"] }
+toml = "1.2"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["compression-gzip", "compression-br", "limit", "timeout", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.0", features = ["fs"] }
+
+[dev-dependencies]
+http-body-util = "0.1"

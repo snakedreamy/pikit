@@ -1,0 +1,20 @@
+{
+  "name": "Regex Tester",
+  "description": "Highlight match spans, inspect numbered & named capture groups with Web Worker ReDoS timeout protection",
+  "keywords": "regex, regexp, pattern, match, capture, groups",
+  "patternLabel": "Regular Expression",
+  "patternPlaceholder": "e.g. (?<proto>https?)://(?<host>[\\w.-]+)(?::(?<port>\\d+))?",
+  "flagsLabel": "Flags",
+  "sampleLabel": "Test String",
+  "highlightLabel": "Match Highlight Preview",
+  "matchesLabel": "Capture Details",
+  "noMatch": "No matches found in sample text",
+  "emptyPattern": "Enter a regular expression to inspect matches in real time",
+  "matchStats": "{{count}} matches · {{ms}} ms",
+  "truncatedNote": "(truncated to first {{max}})",
+  "timeoutError": "Execution exceeded {{ms}} ms and was safely terminated inside a Web Worker. Check for catastrophic backtracking (ReDoS).",
+  "colIndex": "#",
+  "colRange": "Span",
+  "colMatch": "Full Match",
+  "colGroups": "Captures"
+}

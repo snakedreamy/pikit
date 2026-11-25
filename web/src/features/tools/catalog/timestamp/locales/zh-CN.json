@@ -1,0 +1,13 @@
+{
+  "name": "时间戳转换",
+  "description": "秒 / 毫秒自动识别，按当前浏览器本地时区（含夏令时）与 UTC / ISO 8601 互转",
+  "keywords": "时间戳, 日期, 毫秒, 时区, iso8601, unix",
+  "inputLabel": "输入秒级/毫秒级时间戳或日期时间字符串",
+  "useNow": "填入当前时刻",
+  "invalid": "无法解析为有效时间戳或日期字符串",
+  "rowSec": "Unix 秒 (s)",
+  "rowMs": "Unix 毫秒 (ms)",
+  "rowLocal": "本地时区 ({{tz}})",
+  "rowIso": "ISO 8601 (UTC)",
+  "rowUtc": "RFC 7231 (GMT)"
+}

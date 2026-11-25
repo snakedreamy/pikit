@@ -1,0 +1,14 @@
+{
+  "name": "HMAC 消息认证码",
+  "description": "基于 Web Crypto 计算 SHA-1 / SHA-256 / SHA-384 / SHA-512 密钥签名",
+  "keywords": "hmac, 签名, 消息认证, sha256, sha512",
+  "secretLabel": "密钥 (Secret Key)",
+  "keyUtf8": "密钥 UTF-8",
+  "keyHex": "密钥 Hex",
+  "outHex": "输出 Hex",
+  "outBase64": "输出 Base64",
+  "inputLabel": "消息原文",
+  "outputLabel": "HMAC 签名结果",
+  "errEmptyKey": "请输入非空密钥以计算 HMAC",
+  "errHexKey": "十六进制密钥必须为偶数个 0–9 / a–f 字符"
+}

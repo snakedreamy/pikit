@@ -1,0 +1,177 @@
+/* ==========================================================================
+   pikbay five-tier physical depth tokens (single source of truth)
+   Z-1 recessed optical well (--glass) < Z0 chassis (--chassis) < Z1 milled plate (--plate)
+   < Z1.5 raised tactile keycap (--plate-raised) < Z2 foreground workbench sheet (--plate-sheet)
+   ========================================================================== */
+
+/* Dark theme (default): anodized titanium-slate chassis × warm ivory silkscreen ink */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Z0 anodized titanium-slate chassis */
+  --chassis: #12161c;
+  --chassis-deep: #0b0e13;
+  --ambient-top: rgb(107 232 203 / 0.035);
+
+  /* Global hardware telemetry sub-bar below the top bar */
+  --strip-bg: #0e1217;
+  --strip-well: #080a0e;
+  --strip-shadow: rgb(0 0 0 / 0.34);
+  --mint-bar: #54c0a6;
+
+  /* Z1 milled metal plates & Z2 foreground workbench sheets */
+  --plate: #191f28;
+  --plate-raised: #222a35;
+  --plate-sheet: #1d242f;
+  --plate-hi: rgb(228 238 252 / 0.115);
+  --plate-rim: rgb(228 238 252 / 0.048);
+  --plate-lo: rgb(2 4 7 / 0.86);
+  --key-bevel: #090c10;
+  --groove: rgb(4 7 10 / 0.48);
+  --hairline: rgb(228 238 252 / 0.072);
+
+  /* Z-1 recessed optical viewport */
+  --glass: #090c10;
+  --glass-2: #0f141b;
+  --glass-edge: rgb(2 4 7 / 0.92);
+  --glass-shadow: rgb(0 0 0 / 0.76);
+
+  /* Crisp instrument edge shadows */
+  --plate-shadow: 0 6px 16px -6px rgb(0 0 0 / 0.52), 0 1px 2px rgb(0 0 0 / 0.4);
+  --sheet-shadow: -16px 0 48px rgb(0 0 0 / 0.72), 0 24px 68px rgb(0 0 0 / 0.8);
+
+  /* Warm ivory silkscreen ink & cool silver secondary labels */
+  --ink: #f2ece0;
+  --ink-2: #aeb8c4;
+  --ink-3: #6e7987;
+  --ink-on-amber: #241500;
+
+  /* Dual signal accents + fault state */
+  --amber: #f7b23b;
+  --amber-bevel: #845708;
+  --amber-soft: rgb(247 178 59 / 0.15);
+  --amber-glow: rgb(247 178 59 / 0.45);
+
+  --mint: #6be8cb;
+  --mint-dim: #53b09b;
+  --mint-soft: rgb(107 232 203 / 0.13);
+  --mint-glow: rgb(107 232 203 / 0.42);
+  --scope-grid: rgb(228 238 252 / 0.055);
+
+  --fault: #f26f59;
+  --fault-bevel: #7d281a;
+  --fault-soft: rgb(242 111 89 / 0.15);
+  --fault-glow: rgb(242 111 89 / 0.48);
+
+  --notice-bg: #142826;
+  --notice-fault-bg: #321613;
+  --backdrop: rgb(5 7 10 / 0.66);
+}
+
+/* Light theme: brushed warm sand-silver aluminum chassis */
+[data-theme='light'] {
+  color-scheme: light;
+
+  --chassis: #e2dfd6;
+  --chassis-deep: #d5d1c7;
+  --ambient-top: rgb(255 255 255 / 0.48);
+
+  --strip-bg: #dad6cc;
+  --strip-well: rgb(32 29 22 / 0.08);
+  --strip-shadow: rgb(28 25 18 / 0.05);
+  --mint-bar: #0e7b65;
+
+  --plate: #f2f0e9;
+  --plate-raised: #fcfbf8;
+  --plate-sheet: #f7f5ef;
+  --plate-hi: rgb(255 255 255 / 0.96);
+  --plate-rim: rgb(36 33 26 / 0.072);
+  --plate-lo: rgb(36 33 26 / 0.16);
+  --key-bevel: #bab6aa;
+  --groove: rgb(36 33 26 / 0.058);
+  --hairline: rgb(36 33 26 / 0.085);
+
+  --glass: #e5e2d9;
+  --glass-2: #dcd9cf;
+  --glass-edge: rgb(36 33 26 / 0.14);
+  --glass-shadow: rgb(28 25 18 / 0.08);
+
+  --plate-shadow: 0 5px 12px -4px rgb(32 29 22 / 0.09), 0 1px 2px rgb(32 29 22 / 0.06);
+  --sheet-shadow: -12px 0 40px rgb(28 25 18 / 0.18), 0 20px 56px rgb(28 25 18 / 0.22);
+
+  --ink: #181a19;
+  --ink-2: #4b4e4a;
+  --ink-3: #747771;
+  --ink-on-amber: #241500;
+
+  --amber: #d08000;
+  --amber-bevel: #8f5800;
+  --amber-soft: rgb(208 128 0 / 0.13);
+  --amber-glow: rgb(208 128 0 / 0.25);
+
+  --mint: #0b7560;
+  --mint-dim: #267b69;
+  --mint-soft: rgb(11 117 96 / 0.11);
+  --mint-glow: rgb(11 117 96 / 0.22);
+  --scope-grid: rgb(28 30 28 / 0.06);
+
+  --fault: #c53a26;
+  --fault-bevel: #822214;
+  --fault-soft: rgb(197 58 38 / 0.13);
+  --fault-glow: rgb(197 58 38 / 0.28);
+
+  --notice-bg: #dcebe6;
+  --notice-fault-bg: #f4dfdd;
+  --backdrop: rgb(26 24 19 / 0.36);
+}
+
+:root {
+  --font-sans: 'Noto Sans SC Variable', 'Noto Sans CJK SC', 'Source Han Sans SC', 'PingFang SC',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, 'DejaVu Sans Mono', Menlo, Consolas,
+    monospace;
+
+  --topbar-h: 3.625rem;
+  --layout-max: 88rem;
+  --gap: 0.875rem;
+  --pad: 1rem;
+  --r-plate: 0.625rem;
+  --r-glass: 0.4375rem;
+  --r-key: 0.4375rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.625rem;
+  --text-2xl: 2rem;
+
+  --z-sticky: 20;
+  --z-sheet: 45;
+  --z-topbar: 50;
+  --z-dialog: 60;
+  --z-palette: 70;
+  --z-tooltip: 80;
+  --z-toast: 90;
+
+  --ease-out: cubic-bezier(0.22, 0.8, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-normal: 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-normal: 0.01ms;
+  }
+}

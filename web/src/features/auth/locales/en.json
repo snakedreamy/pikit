@@ -1,0 +1,14 @@
+{
+  "title": "Protected Console",
+  "subtitle": "Authentication is enabled for this instance. Sign in to view services and telemetry.",
+  "username": "Username",
+  "usernamePlaceholder": "Configured username",
+  "password": "Password",
+  "passwordPlaceholder": "Enter password",
+  "submit": "Unlock Console",
+  "submitting": "Verifying…",
+  "invalid": "Invalid username or password",
+  "rateLimited": "Too many attempts. Please wait a minute.",
+  "networkError": "Unable to reach server. Please retry.",
+  "required": "Username and password are required"
+}

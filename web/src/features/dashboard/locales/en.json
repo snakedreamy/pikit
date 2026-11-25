@@ -1,0 +1,20 @@
+{
+  "telemetryAria": "System hardware status",
+  "cpu": "CPU",
+  "cores_one": "{{count}} core",
+  "cores_other": "{{count}} cores",
+  "coreTooltip": "Core {{index}}: {{percent}}%",
+  "coreRangeTooltip": "Cores {{start}}–{{end}}: avg {{percent}}%",
+  "memory": "Memory",
+  "storage": "Storage",
+  "selectDiskAria": "Select storage device",
+  "sourceCgroup": "Container quota limit (cgroup v2)",
+  "sourceHost": "System hardware (/proc)",
+  "telemetryError": "System telemetry unavailable: {{reason}}",
+  "groupCount_one": "{{count}} item",
+  "groupCount_other": "{{count}} items",
+  "emptyTitle": "No Bookmarks Configured",
+  "emptyReason": "Add [[groups]] entries in config.toml to populate your startpage.",
+  "loadFailedTitle": "Failed to Load Bookmarks",
+  "diskError": "Mount unavailable: {{reason}}"
+}
