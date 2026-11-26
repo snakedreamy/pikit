@@ -7,12 +7,14 @@
     "dashboard": "Start",
     "tools": "Tools",
     "speedtest": "Speed",
+    "drop": "Drop",
     "devUi": "Spec"
   },
   "navKeywords": {
     "dashboard": "home, startpage, bookmarks",
     "tools": "toolbox, utilities",
     "speedtest": "bandwidth, ping, jitter",
+    "drop": "drop, transfer, share, wormhole, webrtc, file",
     "devUi": "spec, ui, showcase"
   },
   "topbar": {

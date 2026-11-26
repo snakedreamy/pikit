@@ -189,11 +189,7 @@ impl AuthService {
             .expect("revoked_nonces mutex poisoned");
         guard.retain(|_, &mut e| e > now);
         if guard.len() >= MAX_REVOKED_SESSIONS && !guard.contains_key(&nonce_b64) {
-            if let Some(oldest_key) = guard
-                .iter()
-                .min_by_key(|(_, &e)| e)
-                .map(|(k, _)| k.clone())
-            {
+            if let Some(oldest_key) = guard.iter().min_by_key(|(_, &e)| e).map(|(k, _)| k.clone()) {
                 guard.remove(&oldest_key);
             }
         }
@@ -285,7 +281,8 @@ impl AuthService {
     }
 
     fn sign_payload(&self, payload: &str) -> String {
-        let mut mac = HmacSha256::new_from_slice(&self.session_key).expect("valid 32-byte HMAC key");
+        let mut mac =
+            HmacSha256::new_from_slice(&self.session_key).expect("valid 32-byte HMAC key");
         mac.update(payload.as_bytes());
         let bytes = mac.finalize().into_bytes();
         Base64UrlUnpadded::encode_string(&bytes)
@@ -303,8 +300,9 @@ impl AuthService {
 
     pub fn build_clear_cookie(secure: bool) -> HeaderValue {
         let secure_attr = if secure { "; Secure" } else { "" };
-        let val =
-            format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}");
+        let val = format!(
+            "{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure_attr}"
+        );
         HeaderValue::from_str(&val)
             .unwrap_or_else(|_| HeaderValue::from_static("pikbay_session=; Max-Age=0"))
     }
@@ -506,11 +504,7 @@ pub async fn require_auth_middleware(
     }
 
     let peer_ip = peer_ip_from_request(&req);
-    let client_ip = extract_client_ip(
-        peer_ip,
-        req.headers(),
-        &state.config.server.trusted_proxies,
-    );
+    let client_ip = extract_client_ip(peer_ip, req.headers(), &state.config.server.trusted_proxies);
     warn!(
         client_ip = %client_ip,
         path = %req.uri().path(),
@@ -547,7 +541,8 @@ mod tests {
         let svc = AuthService::new(&cfg);
 
         assert_eq!(
-            svc.verify_credentials("admin", "correct-horse-battery").await,
+            svc.verify_credentials("admin", "correct-horse-battery")
+                .await,
             Some(true)
         );
         assert_eq!(
@@ -555,7 +550,8 @@ mod tests {
             Some(false)
         );
         assert_eq!(
-            svc.verify_credentials("other", "correct-horse-battery").await,
+            svc.verify_credentials("other", "correct-horse-battery")
+                .await,
             Some(false)
         );
 

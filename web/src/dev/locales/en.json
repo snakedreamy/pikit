@@ -4,6 +4,7 @@
   "tabDashboard": "Startpage (Multi-Core & Icons)",
   "tabTools": "Tools Matrix (100+ Scale)",
   "tabSpeedtest": "Speedtest + Local History",
+  "tabDrop": "Encrypted Drop (6-Digit E2EE)",
   "tabLogin": "Login Gate ([auth] Enabled)",
   "diskSystem": "System",
   "diskZfs": "ZFS Pool",

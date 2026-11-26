@@ -34,8 +34,8 @@ pub fn sample_memory(cg: &CgroupContext) -> Option<MemoryTelemetryDto> {
                             .unwrap_or(0);
                         let used_bytes =
                             current_bytes.saturating_sub(inactive_file).min(limit_bytes);
-                        let pct = ((used_bytes as f64 / limit_bytes as f64) * 100.0)
-                            .clamp(0.0, 100.0);
+                        let pct =
+                            ((used_bytes as f64 / limit_bytes as f64) * 100.0).clamp(0.0, 100.0);
                         return Some(MemoryTelemetryDto {
                             used_bytes,
                             total_bytes: limit_bytes,

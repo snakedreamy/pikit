@@ -75,11 +75,9 @@ pub fn detect_cgroup_context() -> CgroupContext {
     let has_marker = Path::new("/.dockerenv").exists()
         || Path::new("/run/.containerenv").exists()
         || Path::new("/run/systemd/container").exists();
-    let root_has_limit_knobs =
-        root.join("memory.max").exists() || root.join("cpu.max").exists();
+    let root_has_limit_knobs = root.join("memory.max").exists() || root.join("cpu.max").exists();
 
-    let in_container =
-        is_cgroup_containerized(&cgroup_text, has_marker, root_has_limit_knobs);
+    let in_container = is_cgroup_containerized(&cgroup_text, has_marker, root_has_limit_knobs);
 
     CgroupContext { dir, in_container }
 }

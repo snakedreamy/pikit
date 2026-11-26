@@ -114,7 +114,10 @@ impl SystemService {
             None
         };
 
-        let mut snap = self.snapshot.write().expect("system snapshot rwlock poisoned");
+        let mut snap = self
+            .snapshot
+            .write()
+            .expect("system snapshot rwlock poisoned");
         if cpu_dto.is_some() || !self.cfg.cpu {
             snap.cpu = cpu_dto;
         }
@@ -144,7 +147,10 @@ impl SystemService {
         let _guard = ResetFlag(&self.disk_probe_running);
 
         let disks_dto = sample_disks(&self.cfg.disks);
-        let mut snap = self.snapshot.write().expect("system snapshot rwlock poisoned");
+        let mut snap = self
+            .snapshot
+            .write()
+            .expect("system snapshot rwlock poisoned");
         snap.disks = disks_dto;
     }
 

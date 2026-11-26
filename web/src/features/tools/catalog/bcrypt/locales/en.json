@@ -1,0 +1,23 @@
+{
+  "name": "Bcrypt Hash & Verifier",
+  "description": "Worker-isolated Bcrypt hash generator, verifier, and HTTP Basic Auth / Caddy basic_auth builder",
+  "keywords": "bcrypt, password, hash, verify, htpasswd, caddy, basic_auth, eksblowfish",
+  "genSection": "Generate Bcrypt Hash",
+  "verifySection": "Verify Password Against Hash",
+  "userLabel": "Username (for Basic Auth)",
+  "passLabel": "Plaintext Password",
+  "passPlaceholder": "Enter password to hash locally…",
+  "roundsLabel": "Cost Factor (Rounds)",
+  "generateBtn": "Compute Hash",
+  "computing": "Computing in Worker…",
+  "computedMeta": "{{ms}} ms · cost 2^{{rounds}}",
+  "truncateWarn": "Password exceeds 72 UTF-8 bytes — Bcrypt truncates bytes beyond 72",
+  "hashLabel": "Bcrypt Hash ($2b$)",
+  "htpasswdLabel": "HTTP Basic Auth (.htpasswd)",
+  "caddyLabel": "Caddyfile basic_auth",
+  "verifyHashLabel": "Target Bcrypt Hash ($2a$ / $2b$ / $2y$)",
+  "verifyPassLabel": "Candidate Password",
+  "invalidHash": "Invalid 60-character Bcrypt hash string",
+  "matchOk": "Password Matches (cost {{rounds}} · {{ms}} ms)",
+  "matchFail": "Password Does Not Match (cost {{rounds}} · {{ms}} ms)"
+}

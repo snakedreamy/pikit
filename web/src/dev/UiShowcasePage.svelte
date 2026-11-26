@@ -3,6 +3,7 @@
   import DashboardPage from '../features/dashboard/DashboardPage.svelte';
   import SystemTelemetryBar from '../features/dashboard/SystemTelemetryBar.svelte';
   import type { DashboardGroup, SystemTelemetrySnapshot } from '../features/dashboard/types';
+  import DropPage from '../features/drop/DropPage.svelte';
   import SpeedtestPage from '../features/speedtest/SpeedtestPage.svelte';
   import ToolsIndexPage from '../features/tools/ToolsIndexPage.svelte';
   import { registerLocaleGlob, t, type MessageTree } from '../lib/i18n/index.svelte';
@@ -13,14 +14,16 @@
     import.meta.glob<{ default: MessageTree }>('./locales/*.json', { eager: true })
   );
 
-  type SpecView = 'dashboard' | 'tools' | 'speedtest' | 'login';
+  type SpecView = 'dashboard' | 'tools' | 'speedtest' | 'drop' | 'login';
 
   function readInitialView(): { view: SpecView; clean: boolean } {
     if (typeof window === 'undefined') return { view: 'dashboard', clean: false };
     const params = new URLSearchParams(window.location.search);
     const raw = params.get('view');
     const view: SpecView =
-      raw === 'tools' || raw === 'speedtest' || raw === 'login' ? raw : 'dashboard';
+      raw === 'tools' || raw === 'speedtest' || raw === 'drop' || raw === 'login'
+        ? raw
+        : 'dashboard';
     return { view, clean: params.get('clean') === '1' };
   }
 
@@ -181,6 +184,7 @@
           { value: 'dashboard', label: t('tabDashboard', undefined, 'devSpec') },
           { value: 'tools', label: t('tabTools', undefined, 'devSpec') },
           { value: 'speedtest', label: t('tabSpeedtest', undefined, 'devSpec') },
+          { value: 'drop', label: t('tabDrop', undefined, 'devSpec') },
           { value: 'login', label: t('tabLogin', undefined, 'devSpec') },
         ]}
       />
@@ -201,6 +205,19 @@
     <ToolsIndexPage />
   {:else if activeView === 'speedtest'}
     <SpeedtestPage previewSample={sampleSpeedtest} />
+  {:else if activeView === 'drop'}
+    <DropPage
+      previewSample={{
+        code: '482910',
+        ttlRemaining: 146,
+        ttlTotal: 180,
+        transport: 'p2p',
+        fingerprint: '9F4C2A8E',
+        fileName: 'caddy-edge-backup.tar.zst',
+        fileBytes: 18_432_000,
+        receivedText: '[Interface]\nAddress = 10.66.0.2/32\nDNS = 10.66.0.1\n\n[Peer]\nEndpoint = gw.example.ts.net:51820',
+      }}
+    />
   {:else}
     <LoginGate siteTitle="pikbay" />
   {/if}

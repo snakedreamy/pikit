@@ -1,4 +1,7 @@
-// Myers O(ND) minimum-edit-script diff with Patience unique-line anchoring and adjacent inline character highlights (zero `innerHTML`)
+// Myers O(ND) minimum-edit-script diff with Patience unique-line anchoring, Unified / Split view builders,
+// collapsible context hunks, trailing-whitespace normalization, and binary NUL-byte + SHA-256 inspection (zero `innerHTML`)
+
+import { digestUniversal } from '../../../../lib/digest';
 
 export type DiffOpKind = 'equal' | 'delete' | 'insert';
 
@@ -15,11 +18,31 @@ export interface DiffLine {
   inline?: InlineSegment[];
 }
 
+export interface DiffOptions {
+  ignoreTrailingWhitespace?: boolean;
+}
+
 export interface TextDiffSummary {
   added: number;
   removed: number;
   lines: DiffLine[];
   approximated?: boolean;
+}
+
+export type UnifiedDisplayRow =
+  | { type: 'line'; line: DiffLine }
+  | { type: 'collapsed'; hiddenCount: number };
+
+export type SplitDisplayRow =
+  | { type: 'pair'; left?: DiffLine; right?: DiffLine }
+  | { type: 'collapsed'; hiddenCount: number };
+
+export interface InspectedDiffFile {
+  fileName: string;
+  byteLength: number;
+  isBinary: boolean;
+  sha256Hex: string;
+  text: string;
 }
 
 const MAX_MYERS_MATRIX_SPAN = 2400;
@@ -31,10 +54,6 @@ interface AnchorPair {
   bIdx: number;
 }
 
-/**
- * Patience-style unique common element anchor extraction (`O(K log K)` longest increasing subsequence):
- * partitions large diffs across unique shared lines even when both the first and last lines change simultaneously.
- */
 function findUniqueAnchors<T>(a: readonly T[], b: readonly T[]): AnchorPair[] {
   const mapA = new Map<T, number>();
   for (let i = 0; i < a.length; i += 1) {
@@ -61,7 +80,6 @@ function findUniqueAnchors<T>(a: readonly T[], b: readonly T[]): AnchorPair[] {
 
   if (candidates.length === 0) return [];
 
-  // Compute the longest strictly increasing subsequence over `bIdx` (`aIdx` is already strictly ascending)
   const tails: number[] = [];
   const prevIdx = new Int32Array(candidates.length).fill(-1);
 
@@ -116,7 +134,6 @@ function runBoundedMyers<T>(
   let reached = false;
 
   outer: for (let d = 0; d <= maxD; d += 1) {
-    // Snapshot only the active `[-(d+1) .. +(d+1)]` diagonal window (`O(D^2)` memory instead of `O((N+M)*D)`)
     trace.push(v.slice(offset - d - 1, offset + d + 2));
     for (let k = -d; k <= d; k += 2) {
       const kIdx = k + offset;
@@ -192,7 +209,6 @@ function diffInternal<T>(
   if (fullN === 0) return b.map((item) => ({ kind: 'insert', item }));
   if (fullM === 0) return a.map((item) => ({ kind: 'delete', item }));
 
-  // Strip common prefix and common suffix first
   let prefix = 0;
   while (prefix < fullN && prefix < fullM && a[prefix] === b[prefix]) {
     prefix += 1;
@@ -223,7 +239,6 @@ function diffInternal<T>(
     } else if (m === 0) {
       for (const item of midA) out.push({ kind: 'delete', item });
     } else if (!hasAnySharedItem(midA, midB)) {
-      // Disjoint slices have an exact minimum edit script of all-deletes + all-inserts in `O(N+M)` without allocating matrices
       for (const item of midA) out.push({ kind: 'delete', item });
       for (const item of midB) out.push({ kind: 'insert', item });
     } else if (max <= MAX_MYERS_MATRIX_SPAN) {
@@ -232,7 +247,6 @@ function diffInternal<T>(
         for (const step of exact) out.push(step);
       }
     } else {
-      // Partition large spans on unique shared-line anchors and recurse for exact diffs on each sub-span
       const anchors = findUniqueAnchors(midA, midB);
       if (anchors.length > 0) {
         let curA = 0;
@@ -251,7 +265,6 @@ function diffInternal<T>(
         const tailGap = diffInternal(midA.slice(curA), midB.slice(curB), state);
         for (const step of tailGap) out.push(step);
       } else {
-        // Fall back to bounded-edit-distance Myers when unique anchors are absent; mark `approximated` only if edit budget is exceeded
         const bounded =
           max <= MAX_BOUNDED_MYERS_SPAN
             ? runBoundedMyers(midA, midB, Math.min(max, MAX_MYERS_EDIT_DISTANCE))
@@ -311,11 +324,16 @@ function computeInlinePair(
   return { oldSegs, newSegs };
 }
 
-export function diffTexts(left: string, right: string): TextDiffSummary {
-  const aLines = left === '' ? [] : left.split(/\r?\n/);
-  const bLines = right === '' ? [] : right.split(/\r?\n/);
+export function diffTexts(left: string, right: string, options?: DiffOptions): TextDiffSummary {
+  const rawA = left === '' ? [] : left.split(/\r?\n/);
+  const rawB = right === '' ? [] : right.split(/\r?\n/);
+  const trimRight = Boolean(options?.ignoreTrailingWhitespace);
+
+  const aKeys = trimRight ? rawA.map((s) => s.replace(/[ \t]+$/, '')) : rawA;
+  const bKeys = trimRight ? rawB.map((s) => s.replace(/[ \t]+$/, '')) : rawB;
+
   const state = { approximated: false };
-  const ops = diffInternal(aLines, bLines, state);
+  const ops = diffInternal(aKeys, bKeys, state);
 
   let oldNo = 1;
   let newNo = 1;
@@ -329,7 +347,7 @@ export function diffTexts(left: string, right: string): TextDiffSummary {
         kind: 'equal',
         oldLineNo: oldNo,
         newLineNo: newNo,
-        text: op.item,
+        text: rawB[newNo - 1] ?? op.item,
       });
       oldNo += 1;
       newNo += 1;
@@ -337,7 +355,7 @@ export function diffTexts(left: string, right: string): TextDiffSummary {
       lines.push({
         kind: 'delete',
         oldLineNo: oldNo,
-        text: op.item,
+        text: rawA[oldNo - 1] ?? op.item,
       });
       oldNo += 1;
       removed += 1;
@@ -345,14 +363,13 @@ export function diffTexts(left: string, right: string): TextDiffSummary {
       lines.push({
         kind: 'insert',
         newLineNo: newNo,
-        text: op.item,
+        text: rawB[newNo - 1] ?? op.item,
       });
       newNo += 1;
       added += 1;
     }
   }
 
-  // Compute character-level highlights on adjacent single-line replacements
   for (let i = 0; i + 1 < lines.length; i += 1) {
     if (lines[i].kind === 'delete' && lines[i + 1].kind === 'insert') {
       const { oldSegs, newSegs } = computeInlinePair(lines[i].text, lines[i + 1].text);
@@ -367,5 +384,149 @@ export function diffTexts(left: string, right: string): TextDiffSummary {
     removed,
     lines,
     ...(state.approximated ? { approximated: true } : {}),
+  };
+}
+
+function collapseRuns<T>(
+  items: readonly T[],
+  isEqual: (item: T) => boolean,
+  makeCollapsed: (hiddenCount: number) => T,
+  contextLines: number
+): T[] {
+  const hasChanges = items.some((item) => !isEqual(item));
+  if (!hasChanges) {
+    return items.length > contextLines * 2
+      ? [makeCollapsed(items.length)]
+      : [...items];
+  }
+
+  const keep = new Uint8Array(items.length);
+  for (let i = 0; i < items.length; i += 1) {
+    if (!isEqual(items[i])) {
+      const lo = Math.max(0, i - contextLines);
+      const hi = Math.min(items.length - 1, i + contextLines);
+      for (let k = lo; k <= hi; k += 1) keep[k] = 1;
+    }
+  }
+
+  const out: T[] = [];
+  let idx = 0;
+  while (idx < items.length) {
+    if (keep[idx]) {
+      out.push(items[idx]);
+      idx += 1;
+    } else {
+      let end = idx;
+      while (end < items.length && !keep[end]) end += 1;
+      const hidden = end - idx;
+      if (hidden === 1) {
+        out.push(items[idx]);
+      } else {
+        out.push(makeCollapsed(hidden));
+      }
+      idx = end;
+    }
+  }
+  return out;
+}
+
+export function buildUnifiedDisplayRows(
+  lines: readonly DiffLine[],
+  collapseUnchanged = false,
+  contextLines = 3
+): UnifiedDisplayRow[] {
+  const base: UnifiedDisplayRow[] = lines.map((line) => ({ type: 'line', line }));
+  if (!collapseUnchanged) return base;
+  return collapseRuns(
+    base,
+    (row) => row.type === 'line' && row.line.kind === 'equal',
+    (hiddenCount) => ({ type: 'collapsed', hiddenCount }),
+    contextLines
+  );
+}
+
+export function buildSplitDisplayRows(
+  lines: readonly DiffLine[],
+  collapseUnchanged = false,
+  contextLines = 3
+): SplitDisplayRow[] {
+  const pairs: SplitDisplayRow[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const cur = lines[i];
+    if (cur.kind === 'equal') {
+      pairs.push({ type: 'pair', left: cur, right: cur });
+      i += 1;
+      continue;
+    }
+
+    const deletes: DiffLine[] = [];
+    while (i < lines.length && lines[i].kind === 'delete') {
+      deletes.push(lines[i]);
+      i += 1;
+    }
+    const inserts: DiffLine[] = [];
+    while (i < lines.length && lines[i].kind === 'insert') {
+      inserts.push(lines[i]);
+      i += 1;
+    }
+
+    const span = Math.max(deletes.length, inserts.length);
+    for (let k = 0; k < span; k += 1) {
+      const leftLine = deletes[k];
+      const rightLine = inserts[k];
+      if (leftLine && rightLine && !leftLine.inline && !rightLine.inline) {
+        const { oldSegs, newSegs } = computeInlinePair(leftLine.text, rightLine.text);
+        pairs.push({
+          type: 'pair',
+          left: { ...leftLine, inline: oldSegs },
+          right: { ...rightLine, inline: newSegs },
+        });
+      } else {
+        pairs.push({ type: 'pair', left: leftLine, right: rightLine });
+      }
+    }
+  }
+
+  if (!collapseUnchanged) return pairs;
+  return collapseRuns(
+    pairs,
+    (row) =>
+      row.type === 'pair' &&
+      row.left?.kind === 'equal' &&
+      row.right?.kind === 'equal',
+    (hiddenCount) => ({ type: 'collapsed', hiddenCount }),
+    contextLines
+  );
+}
+
+export function containsNulByte(bytes: Uint8Array, maxScanBytes = 8 * 1024 * 1024): boolean {
+  const end = Math.min(bytes.length, maxScanBytes);
+  for (let i = 0; i < end; i += 1) {
+    if (bytes[i] === 0) return true;
+  }
+  return false;
+}
+
+export async function inspectDiffFileBytes(
+  fileName: string,
+  rawBuffer: ArrayBuffer
+): Promise<InspectedDiffFile> {
+  const bytes = new Uint8Array(rawBuffer);
+  const digest = await digestUniversal('SHA-256', bytes);
+  const sha256Hex = Array.from(digest)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  const isBinary = containsNulByte(bytes);
+  const text = isBinary ? '' : new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+
+  return {
+    fileName,
+    byteLength: bytes.byteLength,
+    isBinary,
+    sha256Hex,
+    text,
   };
 }

@@ -49,11 +49,12 @@
   const route = $derived<RouteMatch>(getRoute());
   const siteTitle = $derived(meta?.title || 'pikbay');
   const speedEnabled = $derived(meta ? meta.features.speedtest : true);
+  const dropEnabled = $derived(meta ? meta.features.drop : true);
 
   const previewTab = $derived.by(() => {
     if (route.name !== 'dev-ui' || typeof window === 'undefined') return null;
     const v = new URLSearchParams(window.location.search).get('view');
-    if (v === 'tools' || v === 'speedtest' || v === 'login') return v;
+    if (v === 'tools' || v === 'speedtest' || v === 'drop' || v === 'login') return v;
     return 'dashboard';
   });
 
@@ -92,6 +93,15 @@
         active: route.name === 'speedtest' || previewTab === 'speedtest',
       });
     }
+    if (dropEnabled) {
+      items.push({
+        id: 'drop',
+        href: '/drop',
+        icon: 'send',
+        label: t('nav.drop'),
+        active: route.name === 'drop' || previewTab === 'drop',
+      });
+    }
     return items;
   });
 
@@ -110,7 +120,7 @@
 
   const searchEntries = $derived.by<SearchEntry[]>(() => {
     if (!authenticated) return [];
-    const list = getAllSearchEntries({ speedtestEnabled: speedEnabled });
+    const list = getAllSearchEntries({ speedtestEnabled: speedEnabled, dropEnabled });
     if (DEV_UI_ENABLED) {
       list.push({
         id: 'nav:dev-ui',
@@ -260,7 +270,7 @@
         {meta.title} v{meta.version}{meta.commit ? ` · ${meta.commit}` : ''}
       </span>
     {:else}
-      <span>pikbay v0.1.0</span>
+      <span>pikbay v0.2.0</span>
     {/if}
   </footer>
 </div>
@@ -321,7 +331,7 @@
   .top__nav {
     display: inline-grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(5.5rem, 1fr);
+    grid-auto-columns: minmax(5.125rem, 1fr);
     gap: 0.25rem;
     padding: 0.25rem;
     border-radius: var(--r-key);
@@ -329,7 +339,7 @@
 
   .top__nav-item {
     height: 1.875rem;
-    padding: 0 0.875rem;
+    padding: 0 0.75rem;
     gap: 0.4375rem;
     border-radius: calc(var(--r-key) - 2px);
     display: inline-flex;
@@ -430,7 +440,7 @@
     color: var(--ink-3);
   }
 
-  @media (max-width: 820px) {
+  @media (max-width: 920px) {
     .bench__header-wrap {
       position: relative;
     }

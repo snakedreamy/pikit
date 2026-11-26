@@ -1,0 +1,23 @@
+{
+  "name": "URL 解析与拼装",
+  "description": "拆解协议、认证信息、主机、端口、路径与 Hash，支持逐行增删改 Query 参数并实时回拼 URL",
+  "keywords": "url, 链接, 解析, query, 参数, 拼接, 域名, 路径",
+  "inputLabel": "待解析 URL",
+  "invalidUrl": "URL 格式不合法（请包含协议头，例如 https://）",
+  "protocolLabel": "协议 (Scheme)",
+  "hostLabel": "主机名 (Host)",
+  "portLabel": "端口 (Port)",
+  "pathLabel": "路径 (Pathname)",
+  "userLabel": "用户名",
+  "passLabel": "密码",
+  "hashLabel": "锚点 (#Hash)",
+  "originLabel": "同源标识 (Origin)",
+  "querySection": "Query 查询参数 ({{count}})",
+  "addParam": "新增参数",
+  "emptyParams": "当前无 Query 参数，点击“新增参数”可逐行追加键值对。",
+  "colEnabled": "启用",
+  "colKey": "参数名 (Key)",
+  "colValue": "参数值（自动解码/编码）",
+  "colAction": "移除",
+  "rebuiltLabel": "实时拼装 URL"
+}

@@ -4,6 +4,7 @@
   "tabDashboard": "导航页（多核/多盘 + 图标兜底）",
   "tabTools": "工具矩阵（百级扩展布局）",
   "tabSpeedtest": "测速台（含浏览器历史）",
+  "tabDrop": "加密闪传（6 位码端到端）",
   "tabLogin": "登录门禁（[auth] 开启态）",
   "diskSystem": "系统",
   "diskZfs": "ZFS 池",

@@ -1,0 +1,23 @@
+{
+  "name": "Bcrypt 哈希与校验",
+  "description": "Web Worker 隔离计算 Bcrypt 哈希与口令匹配验证，同步生成 .htpasswd 与 Caddy basic_auth 配置",
+  "keywords": "bcrypt, 密码哈希, 校验, htpasswd, caddy, basic_auth, 认证",
+  "genSection": "生成 Bcrypt 哈希",
+  "verifySection": "校验明文与已有哈希",
+  "userLabel": "用户名（用于生成认证配置）",
+  "passLabel": "明文口令",
+  "passPlaceholder": "输入待计算哈希的口令…",
+  "roundsLabel": "成本因子 (Cost Rounds)",
+  "generateBtn": "计算哈希",
+  "computing": "Worker 计算中…",
+  "computedMeta": "耗时 {{ms}} ms · 迭代 2^{{rounds}}",
+  "truncateWarn": "口令超过 72 字节 UTF-8 上限，Bcrypt 标准会自动截断超出部分",
+  "hashLabel": "Bcrypt 哈希值 ($2b$)",
+  "htpasswdLabel": "HTTP Basic Auth (.htpasswd)",
+  "caddyLabel": "Caddyfile basic_auth 配置段",
+  "verifyHashLabel": "待校验 Bcrypt 哈希 ($2a$ / $2b$ / $2y$)",
+  "verifyPassLabel": "待验证明文口令",
+  "invalidHash": "不是合法的 60 字符 Bcrypt 哈希串",
+  "matchOk": "口令匹配通过（成本 {{rounds}} · {{ms}} ms）",
+  "matchFail": "口令不匹配（成本 {{rounds}} · {{ms}} ms）"
+}

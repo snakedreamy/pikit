@@ -1,0 +1,11 @@
+{
+  "name": "Docker / Quadlet Converter",
+  "description": "Convert docker run / podman run CLI commands into compose.yaml and Podman .container Quadlet units",
+  "keywords": "docker, podman, compose, quadlet, systemd, container, yaml, unit",
+  "inputLabel": "docker run / podman run Command",
+  "autoUpdateLabel": "Include AutoUpdate=registry in Quadlet",
+  "composeLabel": "compose.yaml",
+  "quadletLabel": "Podman Quadlet ({{file}})",
+  "quadletPathHint": "Rootless path: ~/.config/containers/systemd/{{file}}",
+  "warningsTitle": "Unmapped CLI Flags"
+}

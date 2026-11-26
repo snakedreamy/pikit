@@ -144,7 +144,9 @@ fn read_icon_no_follow(path: &std::path::Path) -> Option<Vec<u8>> {
 
     let cap = (meta.len() as usize).min(MAX_ICON_FILE_BYTES as usize);
     let mut buf = Vec::with_capacity(cap);
-    file.take(MAX_ICON_FILE_BYTES + 1).read_to_end(&mut buf).ok()?;
+    file.take(MAX_ICON_FILE_BYTES + 1)
+        .read_to_end(&mut buf)
+        .ok()?;
     if buf.is_empty() || (buf.len() as u64) > MAX_ICON_FILE_BYTES {
         return None;
     }

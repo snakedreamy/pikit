@@ -1,0 +1,23 @@
+{
+  "name": "文本口令加密",
+  "description": "基于主口令（PBKDF2-SHA256 随机盐 + AES-256-GCM）离线加解密敏感文本与配置（兼容内网纯 HTTP）",
+  "keywords": "加密, 解密, aes, gcm, pbkdf2, 口令, 密文, 离线加密",
+  "modeEncrypt": "加密文本",
+  "modeDecrypt": "解密密文",
+  "passLabel": "主口令（纯内存派生，绝不落盘）",
+  "passPlaceholder": "输入加解密主口令…",
+  "kdfLabel": "PBKDF2 迭代数",
+  "runEncrypt": "立即加密",
+  "runDecrypt": "立即解密",
+  "inputPlain": "待加密明文片段",
+  "inputCipher": "待解密 PKB1 密文串",
+  "outputCipher": "认证加密密文 (PKB1 · AES-256-GCM)",
+  "outputPlain": "已验证解密明文",
+  "errors": {
+    "passphrase_required": "请先输入主口令。",
+    "invalid_envelope": "不是合法或完整的 PKB1 密文格式。",
+    "invalid_iterations": "密文头中的 KDF 迭代参数超出安全范围。",
+    "auth_failed": "认证解密失败：主口令错误或密文已被篡改。",
+    "encrypt_failed": "加密失败。"
+  }
+}

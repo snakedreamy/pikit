@@ -230,8 +230,8 @@ where
             continue;
         }
 
-        let is_real_source = source.starts_with("/dev/")
-            || NETWORK_OR_POOL_FS.contains(&fs_type.as_str());
+        let is_real_source =
+            source.starts_with("/dev/") || NETWORK_OR_POOL_FS.contains(&fs_type.as_str());
         if !is_real_source {
             continue;
         }
@@ -352,7 +352,9 @@ fn extract_parent_block_name(dev_name: &str, sys_link_target: Option<&str>) -> S
             }
         }
     }
-    dev_name.trim_end_matches(|c: char| c.is_ascii_digit()).to_string()
+    dev_name
+        .trim_end_matches(|c: char| c.is_ascii_digit())
+        .to_string()
 }
 
 /// Resolves device symlinks (`/dev/mapper/*`, `/dev/root`, `/dev/disk/by-uuid/*`) and walks Device Mapper `slaves`
@@ -528,9 +530,8 @@ mod tests {
 1420 1285 0:51 /volumes/nvme /mnt/nvme rw,noatime - btrfs /dev/nvme0n1p1 rw
 1422 1285 179:1 /volumes/sdcard /mnt/sdcard rw,noatime - ext4 /dev/mmcblk0p1 rw
 ";
-        let cands = parse_mountinfo_candidates(sample_mountinfo, |mp| {
-            mp != "/usr/share/zoneinfo/Etc/UTC"
-        });
+        let cands =
+            parse_mountinfo_candidates(sample_mountinfo, |mp| mp != "/usr/share/zoneinfo/Etc/UTC");
         assert_eq!(cands.len(), 3);
         assert_eq!(cands[0].source, "/dev/sda2");
         assert_eq!(cands[0].mount_point, "/data"); // writable and shallower than /etc/ssl/custom

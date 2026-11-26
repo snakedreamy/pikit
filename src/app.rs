@@ -16,6 +16,7 @@ use crate::assets;
 use crate::auth::{self, AuthService};
 use crate::config::Config;
 use crate::dashboard;
+use crate::drop::{self, DropService};
 use crate::meta;
 use crate::security::{
     allowed_hosts_middleware, same_origin_api_guard_middleware, security_headers_middleware,
@@ -28,6 +29,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub auth: Arc<AuthService>,
     pub speedtest: Arc<SpeedtestService>,
+    pub drop: Arc<DropService>,
     pub system: Arc<SystemService>,
 }
 
@@ -35,11 +37,13 @@ impl AppState {
     pub fn new(config: Arc<Config>) -> Self {
         let auth = Arc::new(AuthService::new(&config.auth));
         let speedtest = Arc::new(SpeedtestService::new(&config.speedtest));
+        let drop = Arc::new(DropService::new(&config.drop));
         let system = Arc::new(SystemService::new(&config.system));
         Self {
             config,
             auth,
             speedtest,
+            drop,
             system,
         }
     }
@@ -64,13 +68,20 @@ async fn api_not_found() -> Response {
 }
 
 pub fn build_router(state: AppState) -> Router {
-    // 1. Speedtest route group: kept outside response compression and the standard 64 KiB body limit
-    //    so raw network throughput is measured accurately, while still protected by auth, allowed_hosts,
-    //    same-origin guard, and outer security headers.
+    // 1. Streaming speedtest and long-lived encrypted drop WebSocket routes: kept outside HTTP response
+    //    compression, the 64 KiB JSON body cap, and the 30s request timeout, while still protected by
+    //    auth, allowed_hosts, same-origin guard, and outer security headers.
     let speed_router = Router::new()
         .route("/ping", get(speedtest::get_ping))
         .route("/down", get(speedtest::get_down))
         .route("/up", post(speedtest::post_up))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_auth_middleware,
+        ));
+
+    let drop_router = Router::new()
+        .route("/ws", get(drop::get_drop_ws))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth_middleware,
@@ -113,6 +124,7 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .nest("/api/speed", speed_router)
+        .nest("/api/drop", drop_router)
         .merge(standard_routes)
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())
@@ -168,7 +180,12 @@ mod tests {
 
         let res = app
             .clone()
-            .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -259,10 +276,9 @@ daily_quota_gb = 1
             .await
             .unwrap();
         assert_eq!(up_res.status(), StatusCode::OK);
-        let up_json: serde_json::Value = serde_json::from_slice(
-            &up_res.into_body().collect().await.unwrap().to_bytes(),
-        )
-        .unwrap();
+        let up_json: serde_json::Value =
+            serde_json::from_slice(&up_res.into_body().collect().await.unwrap().to_bytes())
+                .unwrap();
         assert_eq!(up_json["receivedBytes"], 200 * 1024);
 
         // 4. Upload exceeding `max_upload_mb` (1 MiB) returns 413 Payload Too Large
@@ -338,8 +354,14 @@ icon = "custom.svg"
         assert_eq!(dash_res.status(), StatusCode::OK);
         let bytes = dash_res.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(json["groups"][0]["items"][0]["iconUrl"], "/icons/custom.svg");
-        assert_eq!(json["groups"][0]["items"][0]["host"], "media.example.ts.net");
+        assert_eq!(
+            json["groups"][0]["items"][0]["iconUrl"],
+            "/icons/custom.svg"
+        );
+        assert_eq!(
+            json["groups"][0]["items"][0]["host"],
+            "media.example.ts.net"
+        );
 
         let icon_res = app
             .clone()
@@ -407,7 +429,8 @@ icon = "custom.svg"
         }
 
         // Must return 404 when `system.enabled = false`
-        let disabled_cfg = Config::from_toml_str("version = 1\n[system]\nenabled = false\n").unwrap();
+        let disabled_cfg =
+            Config::from_toml_str("version = 1\n[system]\nenabled = false\n").unwrap();
         let disabled_app = build_router(AppState::new(Arc::new(disabled_cfg)));
         let disabled_res = disabled_app
             .oneshot(
@@ -443,7 +466,12 @@ icon = "jellyfin.svg"
         for protected in ["/api/dashboard", "/icons/jellyfin.svg", "/api/speed/ping"] {
             let unauth = app
                 .clone()
-                .oneshot(Request::builder().uri(protected).body(Body::empty()).unwrap())
+                .oneshot(
+                    Request::builder()
+                        .uri(protected)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(
@@ -510,7 +538,10 @@ icon = "jellyfin.svg"
                 break;
             }
         }
-        assert!(hit_429, "should return 429 once per-minute login attempts are exceeded");
+        assert!(
+            hit_429,
+            "should return 429 once per-minute login attempts are exceeded"
+        );
     }
 
     #[tokio::test]
@@ -653,8 +684,13 @@ password = "super-secret-password"
         let _ = std::fs::remove_dir_all(&tmp_dir);
         std::fs::create_dir_all(&tmp_dir).unwrap();
 
-        let outside_file = std::env::temp_dir().join(format!("pikbay_secret_{}.svg", std::process::id()));
-        std::fs::write(&outside_file, b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>").unwrap();
+        let outside_file =
+            std::env::temp_dir().join(format!("pikbay_secret_{}.svg", std::process::id()));
+        std::fs::write(
+            &outside_file,
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        )
+        .unwrap();
         let link_path = tmp_dir.join("linked.svg");
         std::os::unix::fs::symlink(&outside_file, &link_path).unwrap();
 
@@ -725,13 +761,15 @@ password = "super-secret-password"
         let lookup = |path: &str| -> Option<Cow<'static, [u8]>> {
             match path {
                 "index.html" => Some(Cow::Borrowed(b"<!doctype html><title>pikbay</title>")),
-                "favicon.svg" => Some(Cow::Borrowed(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>")),
-                "assets/favicon-a1b2c3.svg" => {
-                    Some(Cow::Borrowed(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"))
-                }
-                "assets/icons-sprite-a1b2c3.svg" => {
-                    Some(Cow::Borrowed(b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>"))
-                }
+                "favicon.svg" => Some(Cow::Borrowed(
+                    b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+                )),
+                "assets/favicon-a1b2c3.svg" => Some(Cow::Borrowed(
+                    b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+                )),
+                "assets/icons-sprite-a1b2c3.svg" => Some(Cow::Borrowed(
+                    b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+                )),
                 "assets/app-a1b2c3.js" => Some(Cow::Borrowed(b"console.log(1)")),
                 _ => None,
             }

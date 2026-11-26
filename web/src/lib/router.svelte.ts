@@ -5,6 +5,7 @@ export type RouteMatch =
   | { name: 'tools' }
   | { name: 'tool'; id: string }
   | { name: 'speedtest' }
+  | { name: 'drop' }
   | { name: 'dev-ui' }
   | { name: 'not-found'; path: string };
 
@@ -32,6 +33,7 @@ export function matchRoute(pathname: string): RouteMatch {
     }
   }
   if (clean === '/speedtest') return { name: 'speedtest' };
+  if (clean === '/drop') return { name: 'drop' };
   if (clean === '/dev/ui' && DEV_UI_ENABLED) return { name: 'dev-ui' };
   return { name: 'not-found', path: clean };
 }

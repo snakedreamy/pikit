@@ -123,7 +123,9 @@ impl SpeedtestService {
             } else {
                 if map.len() >= MAX_TRACKED_IP_SEMAPHORES {
                     let cap = self.cfg.per_ip_concurrency;
-                    map.retain(|_, sem| Arc::strong_count(sem) > 1 || sem.available_permits() < cap);
+                    map.retain(|_, sem| {
+                        Arc::strong_count(sem) > 1 || sem.available_permits() < cap
+                    });
                     if map.len() >= MAX_TRACKED_IP_SEMAPHORES {
                         return None;
                     }
@@ -360,7 +362,8 @@ pub async fn get_down(
 
     let max_bytes = svc.max_download_bytes();
     let requested_bytes = query.size.unwrap_or(max_bytes).clamp(1, max_bytes);
-    let Some((target_bytes, quota_reservation)) = svc.reserve_download_quota(requested_bytes) else {
+    let Some((target_bytes, quota_reservation)) = svc.reserve_download_quota(requested_bytes)
+    else {
         warn!(client_ip = %client_ip, path = "/api/speed/down", reason = "daily_quota", "speedtest download hit daily traffic quota");
         return error_json(
             StatusCode::TOO_MANY_REQUESTS,
@@ -374,7 +377,13 @@ pub async fn get_down(
     let started_at = Instant::now();
 
     let stream = futures_util::stream::unfold(
-        (target_bytes, chunk_template, quota_reservation, permits, started_at),
+        (
+            target_bytes,
+            chunk_template,
+            quota_reservation,
+            permits,
+            started_at,
+        ),
         |(remaining, buf, mut reservation, held_permits, t0)| async move {
             if remaining == 0 || t0.elapsed() >= DOWNLOAD_STREAM_TIMEOUT {
                 return None;
@@ -426,11 +435,7 @@ pub async fn post_up(
         );
     }
 
-    let client_ip = extract_client_ip(
-        peer_ip,
-        req.headers(),
-        &state.config.server.trusted_proxies,
-    );
+    let client_ip = extract_client_ip(peer_ip, req.headers(), &state.config.server.trusted_proxies);
 
     if !svc.check_rate_limit(client_ip) {
         warn!(client_ip = %client_ip, path = "/api/speed/up", reason = "rate_limit", "speedtest upload hit per-IP rate limit");

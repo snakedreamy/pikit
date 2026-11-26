@@ -5,6 +5,7 @@ pub mod assets;
 pub mod auth;
 pub mod config;
 pub mod dashboard;
+pub mod drop;
 pub mod meta;
 pub mod security;
 pub mod speedtest;

@@ -69,7 +69,7 @@ test.describe('P0 Foundation: Security Headers, Icons Sandbox, Zero External Req
       });
     });
 
-    for (const route of ['/', '/tools', '/tools/base64', '/speedtest', '/unknown-route', '/dev/ui']) {
+    for (const route of ['/', '/tools', '/tools/base64', '/speedtest', '/drop', '/unknown-route', '/dev/ui']) {
       await page.goto(route, { waitUntil: 'networkidle' });
       const v = await page.evaluate(
         () => (window as unknown as { __cspViolations: string[] }).__cspViolations

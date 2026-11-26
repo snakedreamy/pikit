@@ -16,6 +16,8 @@ pub struct MetaResponse {
     pub features: EnabledFeatures,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speedtest_limits: Option<SpeedtestLimitsMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drop_limits: Option<DropLimitsMeta>,
 }
 
 #[derive(Debug, Serialize)]
@@ -32,6 +34,7 @@ pub struct EnabledFeatures {
     pub system: bool,
     pub per_core: bool,
     pub speedtest: bool,
+    pub drop: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,6 +43,13 @@ pub struct SpeedtestLimitsMeta {
     pub max_download_mb: u64,
     pub max_upload_mb: u64,
     pub max_streams: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropLimitsMeta {
+    pub code_ttl_seconds: u64,
+    pub max_relay_mb: u64,
 }
 
 /// `GET /healthz` liveness probe.
@@ -74,8 +84,10 @@ pub async fn get_meta(State(state): State<AppState>, headers: HeaderMap) -> Resp
                 system: false,
                 per_core: false,
                 speedtest: false,
+                drop: false,
             },
             speedtest_limits: None,
+            drop_limits: None,
         }
     } else {
         let speedtest_limits = cfg.speedtest.enabled.then(|| SpeedtestLimitsMeta {
@@ -86,6 +98,10 @@ pub async fn get_meta(State(state): State<AppState>, headers: HeaderMap) -> Resp
                 .per_ip_concurrency
                 .min(cfg.speedtest.global_concurrency)
                 .clamp(1, 8),
+        });
+        let drop_limits = cfg.drop.enabled.then(|| DropLimitsMeta {
+            code_ttl_seconds: cfg.drop.code_ttl_seconds,
+            max_relay_mb: cfg.drop.max_relay_mb,
         });
 
         MetaResponse {
@@ -101,8 +117,10 @@ pub async fn get_meta(State(state): State<AppState>, headers: HeaderMap) -> Resp
                 system: cfg.system.enabled,
                 per_core: cfg.system.per_core,
                 speedtest: cfg.speedtest.enabled,
+                drop: cfg.drop.enabled,
             },
             speedtest_limits,
+            drop_limits,
         }
     };
 

@@ -1,0 +1,12 @@
+{
+  "name": "YAML · JSON · TOML 互转",
+  "description": "YAML、JSON、TOML 三向配置互转、格式化排版与精确行列语法校验",
+  "keywords": "yaml, toml, json, 转换, 格式化, 配置文件, 语法校验",
+  "sourceFormat": "输入格式",
+  "targetFormat": "输出格式",
+  "autoDetect": "自动识别 ({{detected}})",
+  "indentLabel": "缩进",
+  "inputLabel": "输入配置内容 ({{fmt}})",
+  "outputLabel": "转换输出结果 ({{fmt}})",
+  "syntaxErrorAt": "第 {{line}} 行，第 {{col}} 列：{{msg}}"
+}

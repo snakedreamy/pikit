@@ -10,6 +10,11 @@ export interface SpeedtestLimitsMeta {
   maxStreams: number;
 }
 
+export interface DropLimitsMeta {
+  codeTtlSeconds: number;
+  maxRelayMb: number;
+}
+
 export interface AppMeta {
   version: string;
   commit: string;
@@ -19,8 +24,10 @@ export interface AppMeta {
     system: boolean;
     perCore: boolean;
     speedtest: boolean;
+    drop: boolean;
   };
   speedtestLimits?: SpeedtestLimitsMeta;
+  dropLimits?: DropLimitsMeta;
 }
 
 export class ApiHttpError extends Error {

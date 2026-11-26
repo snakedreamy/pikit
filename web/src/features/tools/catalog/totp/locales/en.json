@@ -1,0 +1,16 @@
+{
+  "name": "TOTP Generator",
+  "description": "RFC 6238 one-time password generator supporting Base32 secrets and otpauth:// URIs",
+  "keywords": "totp, otp, 2fa, mfa, authenticator, rfc6238, base32, otpauth",
+  "secretLabel": "Base32 Secret or otpauth:// URI (Never Saved)",
+  "secretPlaceholder": "Paste Base32 secret (e.g. JBSWY3DPEHPK3PXP) or otpauth://totp/…",
+  "algorithmLabel": "HMAC Hash",
+  "digitsLabel": "Digits",
+  "periodLabel": "Step (s)",
+  "prevWindow": "Previous Window",
+  "currentWindow": "Current Code",
+  "nextWindow": "Next Window",
+  "countdownLabel": "Window Rotation",
+  "countdownValue": "{{seconds}}s left (step #{{counter}})",
+  "uriOverrideNote": "Parameters overridden by otpauth:// URI"
+}

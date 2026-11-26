@@ -8,6 +8,7 @@
   } from './features/dashboard/api';
   import DashboardPage from './features/dashboard/DashboardPage.svelte';
   import SystemTelemetryBar from './features/dashboard/SystemTelemetryBar.svelte';
+  import DropPage from './features/drop/DropPage.svelte';
   import SpeedtestPage from './features/speedtest/SpeedtestPage.svelte';
   import './features/tools/registry';
   import ToolWorkbenchPage from './features/tools/ToolWorkbenchPage.svelte';
@@ -96,13 +97,23 @@
       speedtestLimits={meta?.speedtestLimits}
       onunauthorized={() => refreshMeta()}
     />
+  {:else if route.name === 'drop' && (meta?.features.drop ?? true)}
+    <DropPage
+      dropLimits={meta?.dropLimits}
+      onunauthorized={() => refreshMeta()}
+    />
   {:else if route.name === 'dev-ui' && DEV_UI_ENABLED}
     <UiShowcasePage />
   {:else}
     <EmptyState
       title={t('placeholders.notFoundTitle')}
       reason={t('placeholders.notFoundReason', {
-        path: route.name === 'not-found' ? route.path : '/speedtest',
+        path:
+          route.name === 'not-found'
+            ? route.path
+            : route.name === 'drop'
+              ? '/drop'
+              : '/speedtest',
       })}
     >
       {#snippet actions()}

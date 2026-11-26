@@ -7,7 +7,7 @@
     <img alt="pikbay" src="docs/images/banner-light.svg" width="360">
   </picture>
 </p>
-<h3 align="center">Self-hosted startpage, streaming speedtest, and local-only IT toolbox in a single binary</h3>
+<h3 align="center">Self-hosted startpage, streaming speedtest, local-only IT toolbox, and E2EE LAN drop in a single binary</h3>
 <p align="center">
   Zero external requests · Zero database · Zero disk writes · Strict CSP (<code>default-src 'none'</code>)
 </p>
@@ -19,7 +19,7 @@
     <img src="https://img.shields.io/github/v/release/snakedreamy/pikbay?label=Release&color=0e876f" alt="Latest Release">
   </a>
   <a href="https://github.com/snakedreamy/pikbay/actions/workflows/ci.yml">
-    <img src="https://github.com/snakedreamy/pikbay/actions/workflows/ci.yml/badge.svg" alt="CI Status">
+    <img src="https://img.shields.io/github/v/release/snakedreamy/pikbay/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   </a>
   <a href="https://github.com/snakedreamy/pikbay/pkgs/container/pikbay">
     <img src="https://img.shields.io/badge/GHCR-linux%2Famd64%20%7C%20arm64-222a35" alt="GHCR Multi-Arch Container">
@@ -40,13 +40,17 @@
 </p>
 <table align="center">
   <tr>
-    <td align="center" width="50%">
-      <img alt="pikbay Streaming Speedtest" src="docs/images/preview-speedtest-dark.png" width="468"><br/>
+    <td align="center" width="33%">
+      <img alt="pikbay Streaming Speedtest" src="docs/images/preview-speedtest-dark.png" width="310"><br/>
       <sub><strong>Streaming Speedtest (<code>/speedtest</code>)</strong> — Dual-channel RX/TX oscilloscope &amp; browser-local history</sub>
     </td>
-    <td align="center" width="50%">
-      <img alt="pikbay Local IT Toolbox" src="docs/images/preview-tools-dark.png" width="468"><br/>
-      <sub><strong>Local IT Toolbox (<code>/tools</code>)</strong> — 17 lazy-loaded, 100% in-browser utilities with zero network calls</sub>
+    <td align="center" width="33%">
+      <img alt="pikbay Encrypted Peer Drop" src="docs/images/preview-drop-dark.png" width="310"><br/>
+      <sub><strong>Encrypted Peer Drop (<code>/drop</code>)</strong> — 6-digit X25519 + AEAD P2P transfer with zero server storage</sub>
+    </td>
+    <td align="center" width="33%">
+      <img alt="pikbay Local IT Toolbox" src="docs/images/preview-tools-dark.png" width="310"><br/>
+      <sub><strong>Local IT Toolbox (<code>/tools</code>)</strong> — 24 lazy-loaded, 100% in-browser utilities with zero network calls</sub>
     </td>
   </tr>
 </table>
@@ -54,13 +58,14 @@
 
 <!-- markdownlint-enable first-line-h1 no-inline-html -->
 
-**pikbay** consolidates a homelab **service startpage**, an end-to-end **network speedtest**, and a **local-only developer & sysadmin toolbox** into one self-contained Rust executable (`#![forbid(unsafe_code)]`) with all frontend assets embedded at compile time. It runs without a database, makes zero external network requests, and never writes state to disk—making it equally suited for Raspberry Pi / ARM SBCs, NAS boxes, bare-metal Linux hosts, and `--read-only` `FROM scratch` containers.
+**pikbay** consolidates a homelab **service startpage**, an end-to-end **network speedtest**, a **24-tool local-only developer & sysadmin toolbox**, and a **zero-storage encrypted peer-to-peer drop** into one self-contained Rust executable (`#![forbid(unsafe_code)]`) with all frontend assets embedded at compile time. It runs without a database, makes zero external network requests, and never writes state to disk—making it equally suited for Raspberry Pi / ARM SBCs, NAS boxes, bare-metal Linux hosts, and `--read-only` `FROM scratch` containers.
 
 - [Why pikbay?](#why-pikbay)
 - [Features](#features)
   - [Startpage & Hardware Status Strip (`/`)](#startpage--hardware-status-strip-)
   - [Streaming Network Speedtest (`/speedtest`)](#streaming-network-speedtest-speedtest)
-  - [100% In-Browser IT Toolbox (`/tools`)](#100-in-browser-it-toolbox-tools)
+  - [Peer-to-Peer Encrypted Drop (`/drop`)](#peer-to-peer-encrypted-drop-drop)
+  - [100% In-Browser IT Toolbox (`/tools`, 24 Tools)](#100-in-browser-it-toolbox-tools-24-tools)
 - [Getting Started](#getting-started)
   - [Option 1: Prebuilt Binary + `systemd` (Recommended for Bare Metal / SBCs)](#option-1-prebuilt-binary--systemd-recommended-for-bare-metal--sbcs)
   - [Option 2: Multi-Arch Container (`ghcr.io` / Docker / Podman)](#option-2-multi-arch-container-ghcrio--docker--podman)
@@ -74,16 +79,16 @@
 
 ## Why pikbay?
 
-When managing a personal server, homelab, or Tailscale tailnet, bookmarks, internal link speedtests, and everyday utilities (JWT inspection, Base64, CIDR, Cron, hashes, diffs) typically sprawl across separate containers—or worse, public online tool websites where pasting internal tokens, keys, or config snippets risks leaking credentials.
+When managing a personal server, homelab, or Tailscale tailnet, bookmarks, internal link speedtests, quick device-to-device file/snippet transfers, and everyday utilities (JWT, TOTP, YAML/TOML, Quadlet, CIDR, Cron, hashes, diffs) typically sprawl across separate containers—or worse, public online tool websites where pasting internal tokens, keys, or config snippets risks leaking credentials.
 
 `pikbay` enforces four strict architectural boundaries:
 
 | Guarantee | How `pikbay` enforces it |
 |---|---|
-| **Zero External Requests** | All scripts, styles, icons, and fonts are served same-origin from the embedded binary under `Content-Security-Policy: default-src 'none'`. No remote CDNs, favicon scrapers, or telemetry calls exist. |
-| **100% Client-Side Tools** | The backend exposes **zero** tool-processing endpoints. Static CI guards (`check-no-network.mjs`) forbid `fetch` / `WebSocket` / `XMLHttpRequest` inside `features/tools/**`, and tool inputs/outputs are never written to `localStorage`. |
-| **Zero Backend Disk Writes** | Configuration and custom icons are loaded read-only; sessions use ephemeral CSPRNG HMAC keys in memory. Flash media (`SD / eMMC / UFS`) suffers zero wear, and containers run cleanly with `--read-only`. |
-| **Defense-in-Depth Exposure** | Defaults bind to `127.0.0.1:8080` for zero-friction local/VPN access. Public reverse-proxy deployments add Argon2id single-user auth (`[auth]`), CIDR-verified `trusted_proxies`, `allowed_hosts` (`421`), and same-origin Fetch Metadata CSRF guards. |
+| **Zero External Requests** | All scripts, styles, icons, and fonts are served same-origin from the embedded binary under `Content-Security-Policy: default-src 'none'`. WebRTC in `/drop` runs strictly with `iceServers: []` (zero external STUN/TURN servers). |
+| **100% Client-Side Tools** | The backend exposes **zero** tool-processing endpoints. Static CI guards (`check-no-network.mjs`) forbid `fetch` / `WebSocket` / `XMLHttpRequest` / `RTCPeerConnection` inside `features/tools/**`, and tool inputs/outputs are never written to `localStorage`. |
+| **Zero Backend Disk Writes** | Configuration and custom icons are loaded read-only; sessions and `/drop` pairing rooms live strictly in bounded RAM. Flash media (`SD / eMMC / UFS`) suffers zero wear, and containers run cleanly with `--read-only`. |
+| **Defense-in-Depth Exposure** | Defaults bind to `127.0.0.1:8080` for zero-friction local/VPN access. Public reverse-proxy deployments add Argon2id single-user auth (`[auth]`), CIDR-verified `trusted_proxies`, `allowed_hosts` (`421`), and same-origin Fetch Metadata / `Origin` guards. |
 
 ---
 
@@ -104,18 +109,24 @@ When managing a personal server, homelab, or Tailscale tailnet, bookmarks, inter
 - **Unsmoothed Dual-Channel Oscilloscope**: Plots raw 200ms `RX` and `TX` `<polyline>` traces with dynamic scale ticks so real TCP slow-start bursts and link jitter remain visible.
 - **Browser-Local History & Server Quotas**: Stores up to 50 recent runs strictly in your browser's `localStorage` (`pikbay:v1:speedtest-history`). On the server, upload chunks are counted and discarded in memory, protected by per-IP token buckets, concurrency semaphores, and local-timezone daily traffic quotas (`daily_quota_gb`) with automatic abort refunds.
 
-### 100% In-Browser IT Toolbox (`/tools`)
+### Peer-to-Peer Encrypted Drop (`/drop`)
 
-Includes **17 lazy-chunked developer & network utilities** (architected for 100+ tools via auto-discovered `catalog/<tool-id>/` plugins), with pure-TypeScript fallbacks so cryptographic digests and clipboard copy work even on plain-HTTP private LAN IPs:
+- **One-Time 6-Digit Pairing & Single-Attempt Burn**: Open `/drop` on two devices simultaneously to transfer text snippets, `Ctrl+V` clipboard screenshots, or arbitrary files without accounts or persistent server buffers. Each 6-digit code (`code_ttl_seconds = 180`) allows **strictly one** join attempt—wrong codes, MAC mismatches, or mid-transfer disconnects immediately destroy the room.
+- **Ephemeral X25519 + PIN-Bound 256-Bit AEAD**: Both browsers generate ephemeral X25519 key pairs and derive session keys via `HKDF-SHA256` bound to both random salts and the 6-digit PIN. Metadata (filename, MIME, byte length) is encrypted and sent **only after** mutual Key Confirmation MACs succeed; payloads stream in `64 KiB` **ChaCha20-Poly1305** chunks with monotonic sequence numbers and an authenticated EOF frame (works identically on HTTPS and plain-HTTP LAN IPs).
+- **WebRTC Direct + Automatic Zero-Knowledge Relay Fallback**: Negotiates a direct LAN `RTCDataChannel` (`iceServers: []`, zero external STUN/TURN calls) so bytes bypass the server completely. When Wi-Fi AP isolation, container NAT, or cross-subnet routing blocks P2P after 3 seconds, `/drop` seamlessly streams the exact same AEAD ciphertext chunks through `/api/drop/ws` with bounded backpressure (`max_relay_mb = 256`) and zero server storage.
+
+### 100% In-Browser IT Toolbox (`/tools`, 24 Tools)
+
+Includes **24 lazy-chunked developer & sysadmin utilities** filling a symmetric 4×6 grid (architected for 100+ tools via auto-discovered `catalog/<tool-id>/` plugins), with pure-TypeScript fallbacks so digests, TOTP, and AEAD encryption work even on plain-HTTP private LAN IPs:
 
 | Category | Built-in Tools |
 |---|---|
-| **Encoding & Formats** | `Base64 Codec` (Standard / URL-Safe + binary file import/export), `URL Codec`, `JSON Formatter & Validator` (lossless 64-bit Snowflake/`u64` integers + exact line/column error locator), `Timestamp Converter` (auto s/ms detection, local DST & ISO 8601), `Radix Converter` (`BigInt` base 2–36), `Color Space Converter` (`HEX / RGB / HSL / OKLCH`) |
-| **Crypto & Tokens** | `Hash Digest` (Web Crypto + pure-TS fallback `SHA-1 / SHA-256 / SHA-384 / SHA-512` & RFC 1321 `MD5`), `HMAC Generator`, `UUID v4 / v7 Generator` (RFC 9562 monotonic `v7`), `Password & Token Generator` (rejection-sampled CSPRNG + Shannon entropy bits), `JWT Offline Inspector` (decodes Header/Payload & local expiration without network calls) |
-| **Text & Regex** | `Text Diff` (Patience-anchored Myers line + inline character diff), `Regex Tester` (named/numbered capture table + isolated Web Worker with 800ms ReDoS timeout), `Text Case & Counter` (Unicode code points, UTF-8 byte length & 9 naming conventions) |
-| **Network & Ops** | `IPv4 / IPv6 Subnet Calculator` (`BigInt` CIDR math, RFC 3021 `/31` & RFC 5952 compression), `Cron Parser` (5- and 6-field Vixie Cron + next 8 local firing times), `QR Code Generator` (UTF-8 payload, 4 ECC levels, crisp `SVG` & `PNG` export) |
+| **Encoding & Formats** | `Base64 Codec` (Standard / URL-Safe + binary file import/export), `URL Codec`, `JSON Formatter & Validator` (lossless 64-bit integers + exact line/column error locator), `YAML · JSON · TOML Converter` (three-way config converter & line/col validator), `Timestamp Converter` (auto s/ms, local DST & ISO 8601), `Radix Converter` (`BigInt` base 2–36), `Color Space Converter` (`HEX / RGB / HSL / OKLCH`) |
+| **Crypto & Tokens** | `Hash Digest` (`SHA-1 / SHA-256 / SHA-384 / SHA-512` & `MD5`), `HMAC Generator`, `Bcrypt Hash & Verifier` (Web Worker cost-adjustable `$2b$` + `.htpasswd` & Caddy `basic_auth`), `Offline Text Encryption` (`PBKDF2-SHA256` + `AES-256-GCM` `PKB1` armor), `UUID v4 / v7 Generator`, `Password & Token Generator` (rejection-sampled CSPRNG + Shannon entropy), `JWT Offline Inspector`, `TOTP Generator` (RFC 6238 Base32 & `otpauth://` with Previous / Current / Next windows) |
+| **Text, Diff & Web** | `Text & File Diff` (dual file drop, NUL-byte binary SHA-256 check, Split/Unified views, collapsible context & trailing-space toggle), `Regex Tester` (capture table + Web Worker 800ms ReDoS timeout), `Text Case & Counter` (Unicode code points, UTF-8 bytes & 9 naming styles), `URL Parser & Builder` (interactive Query parameter table & live URL reconstruction) |
+| **Network & Ops** | `IPv4 / IPv6 Subnet Calculator` (`BigInt` CIDR math, RFC 3021 `/31` & RFC 5952 compression), `Chmod Calculator` (POSIX `rwx` + `SUID / SGID / Sticky` matrix ↔ octal/symbolic/CLI), `Docker / Quadlet Converter` (`docker/podman run` → `compose.yaml` & Podman `.container` Quadlet), `Cron Parser` (5/6-field Vixie Cron + next 8 local runs), `QR Code Generator` (`SVG` & `PNG` export) |
 
-Press `/` or `⌘K` (`Ctrl+K`) anywhere to open the global command palette and search bookmarks, hosts, and tools across **English** and **Simplified Chinese (`简体中文`)**.
+Press `/` or `⌘K` (`Ctrl+K`) anywhere to open the global command palette and search bookmarks, hosts, workspaces, and all 24 tools across **English** and **Simplified Chinese (`简体中文`)**.
 
 ---
 
@@ -129,7 +140,7 @@ Download the archive for your platform (`x86_64-unknown-linux-musl`, `aarch64-un
 
 ```bash
 # Example for Linux x86_64 (replace with aarch64-unknown-linux-musl on ARM64 SBCs/servers)
-VERSION="v0.1.0"
+VERSION="v0.2.0"
 ARCH="x86_64-unknown-linux-musl"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/pikbay-${VERSION}-${ARCH}.tar.gz"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/SHA256SUMS.txt"
@@ -189,7 +200,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/api/meta
 ```
 
-- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. `config.toml` carries `version = 1`; if a future release ever changes the configuration schema, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
+- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. Existing `v0.1.0` `config.toml` files (`version = 1`) work with `v0.2.0` without modification (`[drop]` defaults apply automatically). If a future major release ever changes `version`, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
 
 ---
 
@@ -225,7 +236,7 @@ docker run -d \
 ## Reverse Proxy & Public Hardening (Caddy / Nginx)
 
 > [!IMPORTANT]
-> Default settings (`auth.enabled = false`, `speedtest.enabled = true`, `allowed_hosts = []`) are intended for localhost or private VPNs (such as Tailscale / WireGuard). Before exposing `pikbay` behind a public reverse proxy, enable **TLS + `[auth]` + `server.allowed_hosts`**.
+> Default settings (`auth.enabled = false`, `speedtest.enabled = true`, `drop.enabled = true`, `allowed_hosts = []`) are intended for localhost or private VPNs (such as Tailscale / WireGuard). Before exposing `pikbay` behind a public reverse proxy, enable **TLS + `[auth]` + `server.allowed_hosts`**.
 
 ### 1. Generate an Argon2id Password Hash
 
@@ -270,6 +281,7 @@ pikbay.example.com {
         }
     }
 
+    # Caddy forwards `/api/drop/ws` WebSocket upgrades and Origin headers automatically
     handle {
         encode zstd gzip
         reverse_proxy 127.0.0.1:8080
@@ -277,7 +289,7 @@ pikbay.example.com {
 }
 ```
 
-For **Nginx**, forward `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host`, set `client_max_body_size 64m;` (matching `speedtest.max_upload_mb`), and configure `proxy_buffering off; proxy_request_buffering off; gzip off;` on `location /api/speed/`.
+For **Nginx**, forward `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, and `Origin`, set `client_max_body_size 64m;` (matching `speedtest.max_upload_mb`), configure `proxy_buffering off; proxy_request_buffering off; gzip off;` on `location /api/speed/`, and enable WebSocket upgrade headers (`proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`) on `location = /api/drop/ws`.
 
 ---
 
@@ -292,7 +304,7 @@ For **Nginx**, forward `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-
 | `PIKBAY_AUTH_PASSWORD` | — | Optional plaintext password injected via environment (hashed into Argon2id in memory at startup) |
 | `PIKBAY_AUTH_PASSWORD_HASH` | — | Optional Argon2id PHC hash string injected via environment |
 | `pikbay hash-password` | — | Reads a password line from `stdin` and outputs an Argon2id PHC hash |
-| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.1.0 (...)`) |
+| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.2.0 (...)`) |
 
 ### Building & Verifying from Source
 
@@ -339,7 +351,10 @@ npm run e2e
 **2. Why does a bookmark show a 2-letter monogram instead of my file in `icons/`?**
 - Verify `icon` contains only the filename (e.g., `"jellyfin.svg"`—ASCII alphanumeric, `.`, `_`, `-`, with extension `.svg`, `.png`, `.webp`, or `.ico`; subdirectories and symlinks are rejected) and that the service user has read permissions on the file.
 
-**3. Why do sessions sign out after restarting `pikbay`, while speedtest history persists?**
+**3. Why did `/drop` switch from `WebRTC P2P Direct` to `Zero-Knowledge WS Relay`?**
+- When Wi-Fi AP client isolation, symmetric NAT, container bridge networking, or cross-VLAN firewall rules prevent direct browser-to-browser UDP/TCP connectivity within 3 seconds, `/drop` automatically streams the exact same X25519 + ChaCha20-Poly1305 AEAD ciphertext chunks through `/api/drop/ws` (up to `drop.max_relay_mb`, default `256 MiB`). The server never sees plaintext, filenames, or keys, and retains zero bytes in memory once chunks pass through.
+
+**4. Why do sessions sign out after restarting `pikbay`, while speedtest history persists?**
 - To guarantee zero disk writes, `pikbay` generates a fresh 256-bit CSPRNG HMAC signing key in RAM on every startup. Speedtest history lives exclusively in your browser's `localStorage`.
 
 ---

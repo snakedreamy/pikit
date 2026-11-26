@@ -113,16 +113,18 @@ async fn main() -> ExitCode {
     // Start background hardware telemetry sampler tasks
     spawn_system_sampler(Arc::clone(&state.system));
 
-    // Periodically evict expired per-IP rate-limiter buckets and idle speedtest semaphores
+    // Periodically evict expired per-IP rate-limiter buckets, idle speedtest semaphores, and expired drop rooms
     {
         let auth_cleaner = Arc::clone(&state.auth);
         let speed_cleaner = Arc::clone(&state.speedtest);
+        let drop_cleaner = Arc::clone(&state.drop);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(300));
             loop {
                 interval.tick().await;
                 auth_cleaner.retain_recent_limiters();
                 speed_cleaner.retain_recent();
+                drop_cleaner.retain_recent();
             }
         });
     }

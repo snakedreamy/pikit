@@ -1,0 +1,11 @@
+{
+  "name": "容器命令转 Compose / Quadlet",
+  "description": "自研命令分词解析，将 docker run / podman run 一键转为 compose.yaml 与 Podman .container 单元文件",
+  "keywords": "docker, podman, compose, quadlet, 容器, systemd, 转换, 编排",
+  "inputLabel": "docker run / podman run 命令行",
+  "autoUpdateLabel": "Quadlet 附加 AutoUpdate=registry",
+  "composeLabel": "Docker / Podman Compose (compose.yaml)",
+  "quadletLabel": "Podman Quadlet ({{file}})",
+  "quadletPathHint": "Rootless 放置路径：~/.config/containers/systemd/{{file}}",
+  "warningsTitle": "未映射参数提示"
+}

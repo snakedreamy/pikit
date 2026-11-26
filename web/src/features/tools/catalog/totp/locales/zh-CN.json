@@ -1,0 +1,16 @@
+{
+  "name": "TOTP 动态口令",
+  "description": "RFC 6238 双因素动态验证码生成，支持 Base32 密钥与 otpauth:// 链接解析（纯内存零留存）",
+  "keywords": "totp, 动态口令, 二步验证, 2fa, mfa, 验证码, otpauth, base32",
+  "secretLabel": "Base32 密钥或 otpauth:// 链接（绝不落盘存储）",
+  "secretPlaceholder": "粘贴 Base32 密钥或 otpauth://totp/… 链接",
+  "algorithmLabel": "哈希算法",
+  "digitsLabel": "验证码位数",
+  "periodLabel": "步长 (秒)",
+  "prevWindow": "上一期口令",
+  "currentWindow": "当前口令",
+  "nextWindow": "下一期口令",
+  "countdownLabel": "时间窗口轮换",
+  "countdownValue": "剩余 {{seconds}} 秒（窗口 #{{counter}}）",
+  "uriOverrideNote": "当前参数由 otpauth:// 链接指定"
+}

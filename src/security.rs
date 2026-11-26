@@ -354,11 +354,7 @@ pub async fn same_origin_api_guard_middleware(
         return next.run(req).await;
     }
 
-    let client_ip = extract_client_ip(
-        peer_ip,
-        req.headers(),
-        &state.config.server.trusted_proxies,
-    );
+    let client_ip = extract_client_ip(peer_ip, req.headers(), &state.config.server.trusted_proxies);
     warn!(
         client_ip = %client_ip,
         path = %path,
@@ -398,11 +394,7 @@ pub async fn allowed_hosts_middleware(
         .map(|ci| normalize_ip(ci.0.ip()))
         .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-    let client_ip = extract_client_ip(
-        peer_ip,
-        req.headers(),
-        &state.config.server.trusted_proxies,
-    );
+    let client_ip = extract_client_ip(peer_ip, req.headers(), &state.config.server.trusted_proxies);
 
     if peer_ip.is_loopback() && client_ip.is_loopback() && req.uri().path() == "/healthz" {
         return next.run(req).await;

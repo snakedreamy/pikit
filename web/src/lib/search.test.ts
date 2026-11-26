@@ -14,6 +14,12 @@ describe('bilingual local search', () => {
     expect(filterSearchEntries(entries, 'toolbox').map((e) => e.id)).toEqual([
       'nav:tools',
     ]);
+    expect(filterSearchEntries(entries, '闪传').map((e) => e.id)).toEqual([
+      'nav:drop',
+    ]);
+    expect(filterSearchEntries(entries, 'wormhole').map((e) => e.id)).toEqual([
+      'nav:drop',
+    ]);
   });
 
   it('returns empty array when no entry matches', () => {

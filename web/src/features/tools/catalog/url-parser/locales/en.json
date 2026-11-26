@@ -1,0 +1,23 @@
+{
+  "name": "URL Parser & Builder",
+  "description": "Inspect protocol, credentials, host, port, path, hash, and edit Query parameters row-by-row",
+  "keywords": "url, uri, query, searchparams, parse, builder, host, path",
+  "inputLabel": "Input URL",
+  "invalidUrl": "Invalid URL format (include scheme such as https://)",
+  "protocolLabel": "Scheme",
+  "hostLabel": "Hostname",
+  "portLabel": "Port",
+  "pathLabel": "Pathname",
+  "userLabel": "Username",
+  "passLabel": "Password",
+  "hashLabel": "Fragment (#)",
+  "originLabel": "Origin",
+  "querySection": "Query Parameters ({{count}})",
+  "addParam": "Add Parameter",
+  "emptyParams": "No query parameters present — click Add Parameter to append key/value pairs.",
+  "colEnabled": "Use",
+  "colKey": "Key",
+  "colValue": "Decoded Value",
+  "colAction": "Remove",
+  "rebuiltLabel": "Reconstructed URL"
+}

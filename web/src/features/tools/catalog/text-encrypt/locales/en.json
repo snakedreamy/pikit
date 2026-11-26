@@ -1,0 +1,23 @@
+{
+  "name": "Offline Text Encryption",
+  "description": "Passphrase-derived PBKDF2-SHA256 + 256-bit AES-GCM text encryption & decryption (works on plain-HTTP LAN)",
+  "keywords": "encrypt, decrypt, aes, gcm, pbkdf2, aead, passphrase, secret, cipher",
+  "modeEncrypt": "Encrypt",
+  "modeDecrypt": "Decrypt",
+  "passLabel": "Master Passphrase (Never Saved)",
+  "passPlaceholder": "Enter strong passphrase…",
+  "kdfLabel": "PBKDF2 Rounds",
+  "runEncrypt": "Encrypt Now",
+  "runDecrypt": "Decrypt Now",
+  "inputPlain": "Plaintext Snippet",
+  "inputCipher": "PKB1 Armored Ciphertext",
+  "outputCipher": "Authenticated Ciphertext (PKB1 · AES-256-GCM)",
+  "outputPlain": "Verified Decrypted Plaintext",
+  "errors": {
+    "passphrase_required": "Enter a master passphrase first.",
+    "invalid_envelope": "Invalid or truncated PKB1 ciphertext envelope.",
+    "invalid_iterations": "Unsupported KDF iteration count in ciphertext header.",
+    "auth_failed": "Authentication failed — wrong passphrase or tampered ciphertext.",
+    "encrypt_failed": "Encryption failed."
+  }
+}

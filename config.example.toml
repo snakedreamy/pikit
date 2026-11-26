@@ -47,6 +47,13 @@ global_concurrency = 32           # Maximum concurrent speedtest streams across 
 per_ip_requests_per_minute = 600  # Maximum speedtest requests per minute per client IP
 daily_quota_gb = 200              # Global daily speedtest traffic quota (GiB); 0 = unlimited
 
+[drop]                            # Peer-to-peer 6-digit end-to-end encrypted LAN drop (zero server storage; optional section)
+enabled = true
+code_ttl_seconds = 180            # Lifetime of an unclaimed 6-digit pairing code in seconds (default: 180)
+max_rooms = 64                    # Maximum concurrent pairing rooms across all clients
+per_ip_requests_per_minute = 60   # Per-IP handshake / WebSocket connection rate cap (mitigates online code guessing)
+max_relay_mb = 256                # Per-session ciphertext stream cap (MiB) when falling back from WebRTC P2P to WebSocket relay
+
 [[groups]]
 name = "Core Services"
 

@@ -21,8 +21,12 @@ const NAV_GROUP: SearchGroupDescriptor = {
   getTitle: () => t('palette.groupNav'),
 };
 
-export function getBaseSearchEntries(opts?: { speedtestEnabled?: boolean }): SearchEntry[] {
+export function getBaseSearchEntries(opts?: {
+  speedtestEnabled?: boolean;
+  dropEnabled?: boolean;
+}): SearchEntry[] {
   const speedEnabled = opts?.speedtestEnabled ?? true;
+  const dropEnabled = opts?.dropEnabled ?? true;
   const entries: SearchEntry[] = [
     {
       id: 'nav:dashboard',
@@ -50,6 +54,16 @@ export function getBaseSearchEntries(opts?: { speedtestEnabled?: boolean }): Sea
     });
   }
 
+  if (dropEnabled) {
+    entries.push({
+      id: 'nav:drop',
+      group: 'nav',
+      href: '/drop',
+      labels: buildLocalizedRecord((loc) => translateWithLocale(loc, 'nav.drop')),
+      keywords: collectLocalizedKeywords('navKeywords.drop'),
+    });
+  }
+
   return entries;
 }
 
@@ -60,7 +74,10 @@ export function getAllSearchGroups(): SearchGroupDescriptor[] {
   return combined.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
-export function getAllSearchEntries(opts?: { speedtestEnabled?: boolean }): SearchEntry[] {
+export function getAllSearchEntries(opts?: {
+  speedtestEnabled?: boolean;
+  dropEnabled?: boolean;
+}): SearchEntry[] {
   return [...getBaseSearchEntries(opts), ...getRegisteredSearchEntries()];
 }
 

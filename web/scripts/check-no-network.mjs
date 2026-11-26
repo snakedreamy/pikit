@@ -17,6 +17,7 @@ const NETWORK_PATTERNS = [
   { name: 'WebSocket', regex: /\bWebSocket\b/ },
   { name: 'EventSource', regex: /\bEventSource\b/ },
   { name: 'sendBeacon', regex: /\bsendBeacon\s*\(/ },
+  { name: 'RTCPeerConnection', regex: /\b(?:webkit|moz)?RTCPeerConnection\b/ },
   { name: 'remote dynamic import', regex: /import\s*\(\s*['"`]https?:/ },
 ];
 

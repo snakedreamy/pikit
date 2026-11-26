@@ -74,6 +74,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub system: SystemConfig,
     pub speedtest: SpeedtestConfig,
+    pub drop: DropConfig,
     pub groups: Vec<GroupConfig>,
 }
 
@@ -128,6 +129,15 @@ pub struct SpeedtestConfig {
     pub daily_quota_gb: u64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DropConfig {
+    pub enabled: bool,
+    pub code_ttl_seconds: u64,
+    pub max_rooms: usize,
+    pub per_ip_requests_per_minute: u32,
+    pub max_relay_mb: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupConfig {
@@ -165,6 +175,8 @@ struct RawConfig {
     system: RawSystemConfig,
     #[serde(default)]
     speedtest: RawSpeedtestConfig,
+    #[serde(default)]
+    drop: RawDropConfig,
     #[serde(default)]
     groups: Vec<GroupConfig>,
 }
@@ -301,6 +313,33 @@ impl Default for RawSpeedtestConfig {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDropConfig {
+    #[serde(default = "default_true")]
+    enabled: bool,
+    #[serde(default = "default_drop_code_ttl_seconds")]
+    code_ttl_seconds: u64,
+    #[serde(default = "default_drop_max_rooms")]
+    max_rooms: usize,
+    #[serde(default = "default_drop_per_ip_rpm")]
+    per_ip_requests_per_minute: u32,
+    #[serde(default = "default_drop_max_relay_mb")]
+    max_relay_mb: u64,
+}
+
+impl Default for RawDropConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            code_ttl_seconds: default_drop_code_ttl_seconds(),
+            max_rooms: default_drop_max_rooms(),
+            per_ip_requests_per_minute: default_drop_per_ip_rpm(),
+            max_relay_mb: default_drop_max_relay_mb(),
+        }
+    }
+}
+
 fn default_listen() -> String {
     "127.0.0.1:8080".to_string()
 }
@@ -342,6 +381,18 @@ fn default_per_ip_rpm() -> u32 {
 }
 fn default_daily_quota_gb() -> u64 {
     200
+}
+fn default_drop_code_ttl_seconds() -> u64 {
+    180
+}
+fn default_drop_max_rooms() -> usize {
+    64
+}
+fn default_drop_per_ip_rpm() -> u32 {
+    60
+}
+fn default_drop_max_relay_mb() -> u64 {
+    256
 }
 
 impl Config {
@@ -471,6 +522,27 @@ impl Config {
             ));
         }
 
+        if raw.drop.code_ttl_seconds < 15 || raw.drop.code_ttl_seconds > 3600 {
+            return Err(ConfigError::Validation(
+                "drop.code_ttl_seconds must be between 15 and 3600 seconds".to_string(),
+            ));
+        }
+        if raw.drop.max_rooms == 0 || raw.drop.max_rooms > 4096 {
+            return Err(ConfigError::Validation(
+                "drop.max_rooms must be between 1 and 4096".to_string(),
+            ));
+        }
+        if raw.drop.per_ip_requests_per_minute == 0 {
+            return Err(ConfigError::Validation(
+                "drop.per_ip_requests_per_minute must be >= 1".to_string(),
+            ));
+        }
+        if raw.drop.max_relay_mb == 0 || raw.drop.max_relay_mb > 4096 {
+            return Err(ConfigError::Validation(
+                "drop.max_relay_mb must be between 1 and 4096".to_string(),
+            ));
+        }
+
         let mut normalized_groups = Vec::with_capacity(raw.groups.len());
         for (g_idx, mut group) in raw.groups.into_iter().enumerate() {
             group.name = group.name.trim().to_string();
@@ -513,6 +585,13 @@ impl Config {
                 global_concurrency: raw.speedtest.global_concurrency,
                 per_ip_requests_per_minute: raw.speedtest.per_ip_requests_per_minute,
                 daily_quota_gb: raw.speedtest.daily_quota_gb,
+            },
+            drop: DropConfig {
+                enabled: raw.drop.enabled,
+                code_ttl_seconds: raw.drop.code_ttl_seconds,
+                max_rooms: raw.drop.max_rooms,
+                per_ip_requests_per_minute: raw.drop.per_ip_requests_per_minute,
+                max_relay_mb: raw.drop.max_relay_mb,
             },
             groups: normalized_groups,
         })
@@ -580,12 +659,15 @@ fn build_auth_config(
                 "auth.password_hash is not a valid Argon2 PHC string: {e}"
             ))
         })?;
-        if !matches!(parsed.algorithm.as_str(), "argon2id" | "argon2i" | "argon2d")
-            || parsed.hash.is_none()
+        if !matches!(
+            parsed.algorithm.as_str(),
+            "argon2id" | "argon2i" | "argon2d"
+        ) || parsed.hash.is_none()
             || parsed.salt.is_none()
         {
             return Err(ConfigError::Validation(
-                "auth.password_hash is missing a complete Argon2 salt or digest segment".to_string(),
+                "auth.password_hash is missing a complete Argon2 salt or digest segment"
+                    .to_string(),
             ));
         }
         // Probe the verifier once at startup to validate m/t/p parameters so broken hashes never lock out login
@@ -820,6 +902,11 @@ mod tests {
         assert_eq!(cfg.server.icons_dir, PathBuf::from("./icons"));
         assert!(cfg.system.per_core);
         assert_eq!(cfg.speedtest.per_ip_requests_per_minute, 600);
+        assert!(cfg.drop.enabled);
+        assert_eq!(cfg.drop.code_ttl_seconds, 180);
+        assert_eq!(cfg.drop.max_rooms, 64);
+        assert_eq!(cfg.drop.per_ip_requests_per_minute, 60);
+        assert_eq!(cfg.drop.max_relay_mb, 256);
         assert_eq!(cfg.groups.len(), 2);
         assert_eq!(cfg.groups[0].items[0].icon_text.as_deref(), Some("JF"));
     }
@@ -841,8 +928,8 @@ enabled = true
 username = "admin"
 password = "strong-secret-password"
 "#;
-        let cfg =
-            Config::from_toml_str(valid_pw).expect("valid plaintext password should hash in memory");
+        let cfg = Config::from_toml_str(valid_pw)
+            .expect("valid plaintext password should hash in memory");
         assert!(cfg.auth.enabled);
         assert!(cfg
             .auth

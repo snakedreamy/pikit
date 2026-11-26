@@ -7,6 +7,7 @@ describe('History router path matching & malformed URI defense', () => {
     expect(matchRoute('/tools/')).toEqual({ name: 'tools' });
     expect(matchRoute('/tools/json-format')).toEqual({ name: 'tool', id: 'json-format' });
     expect(matchRoute('/speedtest?quick=1')).toEqual({ name: 'speedtest' });
+    expect(matchRoute('/drop/')).toEqual({ name: 'drop' });
   });
 
   it('gracefully degrades malformed percent-encoded paths to not-found instead of throwing URIError', () => {

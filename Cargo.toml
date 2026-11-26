@@ -1,8 +1,8 @@
 [package]
 name = "pikbay"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Self-hosted single-binary personal startpage, real-time speedtest, and local-only IT toolbox"
+description = "Self-hosted single-binary personal startpage, real-time speedtest, local-only IT toolbox, and peer-to-peer encrypted drop"
 license = "AGPL-3.0-only"
 repository = "https://github.com/snakedreamy/pikbay"
 readme = "README.md"
@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 argon2 = { version = "0.5", features = ["std"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 base64ct = { version = "1.6", features = ["alloc"] }
 bytes = "1.10"
 futures-util = "0.3"

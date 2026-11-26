@@ -1,0 +1,12 @@
+{
+  "name": "YAML · JSON · TOML Converter",
+  "description": "Three-way YAML, JSON, and TOML converter, formatter, and line/column syntax validator",
+  "keywords": "yaml, toml, json, convert, format, config, parse, validate",
+  "sourceFormat": "Input Format",
+  "targetFormat": "Output Format",
+  "autoDetect": "Auto ({{detected}})",
+  "indentLabel": "Indent",
+  "inputLabel": "Source Configuration ({{fmt}})",
+  "outputLabel": "Converted Output ({{fmt}})",
+  "syntaxErrorAt": "Line {{line}}, Col {{col}}: {{msg}}"
+}

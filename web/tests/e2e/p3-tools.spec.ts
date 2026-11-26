@@ -7,25 +7,32 @@ const ALL_TOOL_IDS = [
   'timestamp',
   'base-convert',
   'color',
+  'data-convert',
   'hash',
   'hmac',
   'uuid',
   'token',
   'jwt',
+  'bcrypt',
+  'text-encrypt',
+  'totp',
   'text-diff',
   'regex',
   'text-case',
   'subnet',
   'cron',
   'qrcode',
+  'chmod',
+  'docker-convert',
+  'url-parser',
 ] as const;
 
-test.describe('P3 Local-Only Toolbox: All 17 Plugin Workbenches, Bilingual i18n & Zero Network Leak', () => {
-  test('renders all 17 tools in symmetric index, supports favorites & category select, and mounts every lazy tool chunk under strict CSP without network calls', async ({
+test.describe('P3 Local-Only Toolbox: All 24 Plugin Workbenches, Bilingual i18n & Zero Network Leak', () => {
+  test('renders all 24 tools in symmetric index, supports favorites & category select, and mounts every lazy tool chunk under strict CSP without network calls', async ({
     page,
     baseURL,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     const externalRequests: string[] = [];
     const unexpectedApiCalls: string[] = [];
@@ -64,21 +71,20 @@ test.describe('P3 Local-Only Toolbox: All 17 Plugin Workbenches, Bilingual i18n 
     });
 
     await page.goto('/tools', { waitUntil: 'networkidle' });
-    await expect(page.locator('.tool-card')).toHaveCount(17);
+    await expect(page.locator('.tool-card')).toHaveCount(24);
 
     // Verify favorite star toggle and "Starred only" filter (`pikbay:v1:favorite-tools`)
     const firstStar = page.locator('.tool-card__star').first();
     await firstStar.click();
     await expect(page.locator('.tools-group').first()).toContainText('★');
 
-    // Visit all 17 lazy-loaded tool workbenches to verify computation, bilingual switching, and strict CSP
+    // Visit all 24 lazy-loaded tool workbenches to verify computation, bilingual switching, and strict CSP
     for (const id of ALL_TOOL_IDS) {
       await page.goto(`/tools/${id}`, { waitUntil: 'networkidle' });
       await expect(page.locator('.wb-shell')).toBeVisible();
       await expect(page.locator('.wb-shell__loading')).toHaveCount(0);
 
       if (id === 'regex') {
-        // Verify Web Worker regex execution renders match highlights and named capture groups
         await expect(page.locator('.rx-mark').first()).toBeVisible();
         await expect(page.locator('.rx-table')).toContainText('media.example.ts.net');
       } else if (id === 'subnet') {
@@ -87,15 +93,19 @@ test.describe('P3 Local-Only Toolbox: All 17 Plugin Workbenches, Bilingual i18n 
         await expect(page.locator('.cr-list .cr-item')).toHaveCount(8);
       } else if (id === 'qrcode') {
         await expect(page.locator('svg.qr-svg path')).toBeVisible();
+      } else if (id === 'totp') {
+        await expect(page.getByTestId('totp-current-code')).toContainText(/\d{3}\s\d{3}/);
+      } else if (id === 'docker-convert') {
+        await expect(page.locator('.dk-bench')).toContainText('pikbay.container');
       }
     }
 
-    // Switch locales on the QR Code workbench and confirm reactive translation updates without missing keys
+    // Switch locales on the URL Parser workbench and confirm reactive translation updates without missing keys
     const localeSelect = page.locator('select[name="ui-locale"]');
     await localeSelect.selectOption('zh-CN');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('二维码生成');
+    await expect(page.locator('.wb-shell__center h2')).toHaveText('URL 解析与拼装');
     await localeSelect.selectOption('en');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('QR Code Generator');
+    await expect(page.locator('.wb-shell__center h2')).toHaveText('URL Parser & Builder');
 
     // Verify no tool inputs or outputs were written to `localStorage` (only allowlisted keys are permitted)
     const storageKeys = await page.evaluate(() => Object.keys(window.localStorage));

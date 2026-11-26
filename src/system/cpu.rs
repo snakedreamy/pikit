@@ -63,17 +63,11 @@ pub fn capture_cpu_point(cg: &CgroupContext, include_per_core: bool) -> CpuSampl
     let host_parallelism = proc_core_count.max(fallback_parallelism).max(1);
 
     let (capped_quota_cores, capped_cgroup_usage_usec) = if cg.in_container {
+        // Detect explicit `cpu.max` quota or cpuset-pinned containers (`available_parallelism < proc_core_count`)
         let explicit_quota = std::fs::read_to_string(cg.dir.join("cpu.max"))
             .ok()
             .and_then(|s| parse_explicit_cpu_quota(&s, host_parallelism))
-            .or_else(|| {
-                // Detect cpuset-pinned containers (e.g. `--cpuset-cpus=0-1` where `available_parallelism < proc_core_count`)
-                if fallback_parallelism < host_parallelism {
-                    Some(fallback_parallelism as f64)
-                } else {
-                    None
-                }
-            });
+            .or((fallback_parallelism < host_parallelism).then_some(fallback_parallelism as f64));
         if let Some(q) = explicit_quota {
             let usage = std::fs::read_to_string(cg.dir.join("cpu.stat"))
                 .ok()
@@ -192,7 +186,10 @@ pub fn parse_cgroup_usage_usec(raw: &str) -> Option<u64> {
     None
 }
 
-pub fn parse_proc_stat(raw: &str, include_per_core: bool) -> (Option<ProcStatLine>, Vec<ProcStatLine>) {
+pub fn parse_proc_stat(
+    raw: &str,
+    include_per_core: bool,
+) -> (Option<ProcStatLine>, Vec<ProcStatLine>) {
     let mut agg = None;
     let mut cores = Vec::new();
 
