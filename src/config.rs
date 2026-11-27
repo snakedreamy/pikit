@@ -15,6 +15,8 @@ pub const SUPPORTED_CONFIG_VERSION: u32 = 1;
 pub const MAX_USERNAME_LEN: usize = 64;
 pub const MIN_PASSWORD_CHARS: usize = 6;
 pub const MAX_PASSWORD_BYTES: usize = 256;
+/// Minimum per-IP speedtest request budget per minute so a single normal 3-phase run (20 pings + multi-stream chunks) can complete.
+pub const MIN_SPEEDTEST_RPM: u32 = 60;
 
 const MAX_TITLE_LEN: usize = 64;
 const MAX_GROUP_NAME_LEN: usize = 64;
@@ -521,6 +523,11 @@ impl Config {
                 "speedtest.per_ip_requests_per_minute must be >= 1".to_string(),
             ));
         }
+        if raw.speedtest.enabled && raw.speedtest.per_ip_requests_per_minute < MIN_SPEEDTEST_RPM {
+            return Err(ConfigError::Validation(format!(
+                "speedtest.per_ip_requests_per_minute must be >= {MIN_SPEEDTEST_RPM} when speedtest.enabled = true so a normal test session can complete"
+            )));
+        }
 
         if raw.drop.code_ttl_seconds < 15 || raw.drop.code_ttl_seconds > 3600 {
             return Err(ConfigError::Validation(
@@ -1008,5 +1015,24 @@ icon = "../etc/passwd"
         assert!(Config::from_toml_str(bad_icon).is_err());
         assert!(!is_safe_icon_filename(".hidden.svg"));
         assert!(!is_safe_icon_filename("script.js"));
+    }
+
+    #[test]
+    fn rejects_too_low_speedtest_rpm_when_enabled() {
+        let too_low = r#"
+version = 1
+[speedtest]
+enabled = true
+per_ip_requests_per_minute = 10
+"#;
+        assert!(Config::from_toml_str(too_low).is_err());
+
+        let disabled_low_ok = r#"
+version = 1
+[speedtest]
+enabled = false
+per_ip_requests_per_minute = 10
+"#;
+        assert!(Config::from_toml_str(disabled_low_ok).is_ok());
     }
 }

@@ -12,15 +12,26 @@
 
   let raw = $state('parseHttpHeader_v2Config');
   let loadedFile = $state<InspectedTextFile | null>(null);
+  let fileError = $state('');
   let dragging = $state(false);
   let fileInputEl: HTMLInputElement | undefined = $state();
+  let fileReadSeq = 0;
 
   async function handleFile(file: File) {
-    const ab = await file.arrayBuffer();
-    const inspected = inspectTextFileBytes(file.name, ab);
-    loadedFile = inspected;
-    if (!inspected.isBinary) {
-      raw = inspected.text;
+    const seq = ++fileReadSeq;
+    fileError = '';
+    try {
+      const ab = await file.arrayBuffer();
+      if (seq !== fileReadSeq) return;
+      const inspected = inspectTextFileBytes(file.name, ab);
+      loadedFile = inspected;
+      if (!inspected.isBinary) {
+        raw = inspected.text;
+      }
+    } catch {
+      if (seq !== fileReadSeq) return;
+      loadedFile = null;
+      fileError = t('fileReadError', { name: file.name }, NS);
     }
   }
 
@@ -39,6 +50,8 @@
   }
 
   function clearAll() {
+    fileReadSeq += 1;
+    fileError = '';
     raw = '';
     loadedFile = null;
   }
@@ -102,7 +115,7 @@
         <Button
           variant="ghost"
           size="sm"
-          disabled={!raw && !loadedFile}
+          disabled={!raw && !loadedFile && !fileError}
           onclick={clearAll}
         >
           <Icon name="x" size="xs" />
@@ -111,7 +124,12 @@
       </div>
     </div>
 
-    {#if loadedFile?.isBinary}
+    {#if fileError}
+      <div class="glass tc-binary-alert" role="alert">
+        <Badge tone="danger" dot mono>ERR</Badge>
+        <span>{fileError}</span>
+      </div>
+    {:else if loadedFile?.isBinary}
       <div class="glass tc-binary-alert" role="status">
         <Badge tone="warning" dot mono>BIN</Badge>
         <span>
@@ -124,7 +142,17 @@
       </div>
     {/if}
 
-    <TextArea id="pk-tc-input" bind:value={raw} rows={5} mono />
+    <TextArea
+      id="pk-tc-input"
+      bind:value={raw}
+      rows={5}
+      mono
+      oninput={() => {
+        fileReadSeq += 1;
+        fileError = '';
+        if (loadedFile) loadedFile = null;
+      }}
+    />
   </div>
 
   <!-- Primary 4-column readout deck -->

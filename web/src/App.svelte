@@ -37,10 +37,35 @@
         document.title = data.title;
       }
     } catch {
-      // Keep default state during offline or static preview debugging
+      // Keep current state during offline or static preview debugging
     } finally {
       authBootstrapped = true;
     }
+  }
+
+  /**
+   * Immediately locks the UI and wipes cached private bookmarks upon logout or HTTP 401,
+   * without waiting for a subsequent `/api/meta` round-trip that might fail with 5xx/offline.
+   */
+  function handleSessionInvalidated() {
+    paletteOpen = false;
+    clearDashboardBookmarksCache();
+    meta = meta
+      ? {
+          ...meta,
+          auth: {
+            enabled: true,
+            authenticated: false,
+          },
+        }
+      : {
+          version: '0.2.0',
+          commit: '',
+          title: 'pikbay',
+          auth: { enabled: true, authenticated: false },
+          features: { system: false, perCore: false, speedtest: false, drop: false },
+        };
+    void refreshMeta();
   }
 
   onMount(() => {
@@ -67,14 +92,14 @@
   {meta}
   authenticated={!requiresLogin}
   bind:paletteOpen
-  onloggedout={() => refreshMeta()}
+  onloggedout={handleSessionInvalidated}
 >
   {#snippet telemetryStrip()}
     {#if route.name !== 'dev-ui'}
       <SystemTelemetryBar
         systemEnabled={meta?.features.system ?? true}
         perCoreEnabled={meta?.features.perCore ?? true}
-        onunauthorized={() => refreshMeta()}
+        onunauthorized={handleSessionInvalidated}
       />
     {/if}
   {/snippet}
@@ -87,7 +112,7 @@
       onsuccess={() => refreshMeta()}
     />
   {:else if route.name === 'dashboard'}
-    <DashboardPage onunauthorized={() => refreshMeta()} />
+    <DashboardPage onunauthorized={handleSessionInvalidated} />
   {:else if route.name === 'tools'}
     <ToolsIndexPage />
   {:else if route.name === 'tool'}
@@ -95,12 +120,12 @@
   {:else if route.name === 'speedtest' && (meta?.features.speedtest ?? true)}
     <SpeedtestPage
       speedtestLimits={meta?.speedtestLimits}
-      onunauthorized={() => refreshMeta()}
+      onunauthorized={handleSessionInvalidated}
     />
   {:else if route.name === 'drop' && (meta?.features.drop ?? true)}
     <DropPage
       dropLimits={meta?.dropLimits}
-      onunauthorized={() => refreshMeta()}
+      onunauthorized={handleSessionInvalidated}
     />
   {:else if route.name === 'dev-ui' && DEV_UI_ENABLED}
     <UiShowcasePage />

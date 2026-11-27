@@ -8,6 +8,7 @@ export interface SpeedtestLimitsMeta {
   maxDownloadMb: number;
   maxUploadMb: number;
   maxStreams: number;
+  requestsPerMinute?: number;
 }
 
 export interface DropLimitsMeta {

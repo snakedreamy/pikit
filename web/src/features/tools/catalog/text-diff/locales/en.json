@@ -21,5 +21,6 @@
   "binaryHint": "NUL byte detected — comparing exact byte length and SHA-256 digest instead of rendering raw bytes.",
   "binaryMissingPeer": "Import a second file on the opposite side to compare SHA-256 digests.",
   "sizeLabel": "Size",
-  "sha256Label": "SHA-256"
+  "sha256Label": "SHA-256",
+  "fileReadError": "Failed to read file {{name}}."
 }

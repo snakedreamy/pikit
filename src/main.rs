@@ -62,8 +62,11 @@ async fn shutdown_signal() {
     }
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// Maximum grace period granted to detached background threads (such as an isolated `statvfs`
+/// probe stuck on an unresponsive network mount) after HTTP connections have finished draining.
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
+fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     if let Some(sub) = args.next() {
         match sub.as_str() {
@@ -106,6 +109,23 @@ async fn main() -> ExitCode {
         }
     };
 
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            error!(error = %err, "failed to initialize Tokio runtime");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let exit_code = runtime.block_on(run_server(config, config_path));
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+    exit_code
+}
+
+async fn run_server(config: Config, config_path: PathBuf) -> ExitCode {
     let listen_addr: SocketAddr = config.server.listen_addr;
     let auth_enabled = config.auth.enabled;
     let state = AppState::new(Arc::new(config));
@@ -161,4 +181,29 @@ async fn main() -> ExitCode {
 
     info!("pikbay stopped cleanly");
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_shutdown_timeout_does_not_hang_on_blocked_worker() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        rt.block_on(async {
+            tokio::task::spawn_blocking(|| {
+                std::thread::sleep(Duration::from_secs(10));
+            });
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        });
+
+        let start = std::time::Instant::now();
+        rt.shutdown_timeout(Duration::from_millis(60));
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
 }

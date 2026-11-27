@@ -27,6 +27,12 @@ use crate::security::{extract_client_ip, is_same_origin_api_request, IpNet};
 pub const MAX_CONTROL_TEXT_BYTES: usize = 32 * 1024;
 /// Maximum encrypted binary chunk frame size (64 KiB).
 pub const MAX_RELAY_BINARY_BYTES: usize = 64 * 1024;
+/// Plaintext slice per `/drop` chunk frame (`64 KiB - 64 B` = `65,472 B`), matching `DROP_CHUNK_PLAINTEXT_BYTES`.
+const DROP_CHUNK_PLAINTEXT_BYTES: u64 = 64 * 1024 - 64;
+/// Per-chunk AEAD wire overhead (`9 B` frame header + `16 B` ChaCha20-Poly1305 tag).
+const DROP_CHUNK_WIRE_OVERHEAD_BYTES: u64 = 9 + 16;
+/// Fixed wire allowance covering the encrypted `META` and `EOF` control frames so exact `max_relay_mb` files complete cleanly.
+const DROP_ENVELOPE_WIRE_ALLOWANCE_BYTES: u64 = 4096;
 /// Per-peer cumulative signaling text cap to prevent abusing JSON frames as an unbounded data channel.
 const MAX_TOTAL_CONTROL_BYTES: usize = 256 * 1024;
 /// Bounded per-direction channel depth (~1 MiB worst-case per direction at 64 KiB/frame) for TCP backpressure.
@@ -94,8 +100,14 @@ impl DropService {
         self.cfg.enabled
     }
 
+    /// Computes the exact maximum wire ciphertext budget for a configured `max_relay_mb` payload limit,
+    /// including per-chunk AEAD headers/tags and the `META` + `EOF` frame envelope.
     pub fn max_relay_bytes(&self) -> u64 {
-        self.cfg.max_relay_mb.saturating_mul(1024 * 1024)
+        let max_plain = self.cfg.max_relay_mb.saturating_mul(1024 * 1024);
+        let max_chunks = max_plain.div_ceil(DROP_CHUNK_PLAINTEXT_BYTES);
+        max_plain
+            .saturating_add(max_chunks.saturating_mul(DROP_CHUNK_WIRE_OVERHEAD_BYTES))
+            .saturating_add(DROP_ENVELOPE_WIRE_ALLOWANCE_BYTES)
     }
 
     /// Evicts expired waiting rooms and stale per-IP rate-limiter buckets.
@@ -1108,5 +1120,22 @@ per_ip_requests_per_minute = 120
             MiniWsClient::connect(addr, Some(&origin), None).await.err(),
             Some(429)
         );
+    }
+
+    #[test]
+    fn max_relay_bytes_accommodates_exact_payload_plus_aead_envelope() {
+        let svc = DropService::new(&DropConfig {
+            enabled: true,
+            code_ttl_seconds: 180,
+            max_rooms: 8,
+            per_ip_requests_per_minute: 60,
+            max_relay_mb: 1,
+        });
+        let exact_1mib = 1024 * 1024_u64;
+        let chunks = exact_1mib.div_ceil(DROP_CHUNK_PLAINTEXT_BYTES);
+        // 180 B META wire + 1 MiB payload + 17 * 25 B chunk AEAD tags + 80 B EOF wire
+        let realistic_wire = 180 + exact_1mib + chunks * DROP_CHUNK_WIRE_OVERHEAD_BYTES + 80;
+        assert!(realistic_wire <= svc.max_relay_bytes());
+        assert!(svc.max_relay_bytes() < exact_1mib + 8192);
     }
 }

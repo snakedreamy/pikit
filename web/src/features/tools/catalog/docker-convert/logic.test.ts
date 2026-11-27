@@ -86,4 +86,21 @@ describe('docker run / podman run -> compose.yaml & Podman Quadlet converter', (
       expect(multilineEnv.quadletUnit).toContain('Environment="BANNER=line1\\n[Service]\\nExecStart=/bin/sh"');
     }
   });
+
+  it('handles --init without swallowing image name, preserves exact named volume names, and rejects ambiguous unknown flags', () => {
+    const initCmd = convertDockerRun('docker run --init -v appdata:/data alpine echo hi');
+    expect(initCmd.ok).toBe(true);
+    if (initCmd.ok) {
+      expect(initCmd.composeYaml).toContain('image: alpine');
+      expect(initCmd.composeYaml).toContain('init: true');
+      expect(initCmd.composeYaml).toContain('command: ["echo", "hi"]');
+      expect(initCmd.composeYaml).toContain('volumes:\n  appdata:\n    name: appdata');
+      expect(initCmd.quadletUnit).toContain('Image=alpine');
+      expect(initCmd.quadletUnit).toContain('RunInit=true');
+      expect(initCmd.quadletUnit).toContain('Exec=echo hi');
+    }
+
+    const ambiguousFlag = convertDockerRun('docker run --mystery-flag alpine echo hi');
+    expect(ambiguousFlag.ok).toBe(false);
+  });
 });

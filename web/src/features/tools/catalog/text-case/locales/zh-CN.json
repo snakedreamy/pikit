@@ -6,6 +6,7 @@
   "importFile": "导入文件",
   "dropHint": "支持拖拽本地文本文件到此处或直接输入",
   "binaryWarning": "检测到二进制文件（{{name}} · {{size}}）— 已拦截含 NUL 字节内容以免渲染乱码。",
+  "fileReadError": "读取文件 {{name}} 失败。",
   "statGraphemes": "视觉字符 (字素)",
   "subCodePoints": "Unicode 码点: {{count}}",
   "statBytes": "UTF-8 字节",

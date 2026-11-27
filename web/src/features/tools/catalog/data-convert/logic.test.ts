@@ -73,4 +73,24 @@ code_ttl_seconds = 180`;
     if (!backToToml.ok) return;
     expect(backToToml.output).toContain('9007199254740993');
   });
+
+  it('preserves __proto__ keys, scientific-notation large integers, and rejects non-finite 1e400', () => {
+    const jsonWithProtoAndSci = '{"__proto__":{"role":"literal"},"sci_id":9.007199254740993e15}';
+    const toYaml = convertStructuredData(jsonWithProtoAndSci, 'json', 'yaml');
+    expect(toYaml.ok).toBe(true);
+    if (!toYaml.ok) return;
+    expect(toYaml.output).toContain('__proto__:');
+    expect(toYaml.output).toContain('9007199254740993');
+
+    const backToJson = convertStructuredData(toYaml.output, 'yaml', 'json');
+    expect(backToJson.ok).toBe(true);
+    if (!backToJson.ok) return;
+    expect(backToJson.output).toContain('"__proto__"');
+    expect(backToJson.output).toContain('9007199254740993');
+    expect(({} as { role?: string }).role).toBeUndefined();
+
+    // Overflowing float 1e400 must fail explicitly instead of silently turning into `null`
+    expect(convertStructuredData('{"huge": 1e400}', 'json', 'json').ok).toBe(false);
+    expect(convertStructuredData('huge: 1e400', 'yaml', 'json').ok).toBe(false);
+  });
 });

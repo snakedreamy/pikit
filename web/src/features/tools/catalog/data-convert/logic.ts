@@ -71,10 +71,66 @@ function offsetToLineColumn(source: string, offset: number): SyntaxLocation {
 
 const MIN_SAFE_BIG = BigInt(Number.MIN_SAFE_INTEGER);
 const MAX_SAFE_BIG = BigInt(Number.MAX_SAFE_INTEGER);
+const MAX_SCIENTIFIC_INT_DIGITS = 100;
+
+/**
+ * Defines an own enumerable data property without triggering `Object.prototype.__proto__` setters.
+ */
+function setOwnDataProperty(target: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * Parses a JSON numeric token without silent precision loss or silent Infinity coercion:
+ * - Exact integers (including scientific notation such as `9.007199254740993e15`) outside IEEE 754 safe integer bounds stay `bigint`.
+ * - Numbers overflowing IEEE 754 `double` (e.g. `1e400`) throw an explicit range error instead of becoming `Infinity` -> `null`.
+ */
+function parseJsonNumberLossless(raw: string): number | bigint {
+  if (/^-?\d+$/.test(raw)) {
+    const big = BigInt(raw);
+    return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(raw) : big;
+  }
+
+  const sciMatch = raw.match(/^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/);
+  if (sciMatch) {
+    const [, sign, intPart, fracPart = '', expRaw] = sciMatch;
+    const exp = Number(expRaw);
+    if (Number.isSafeInteger(exp)) {
+      const combined = intPart + fracPart;
+      const stripped = combined.replace(/^0+/, '');
+      if (stripped === '') {
+        return 0;
+      }
+      const withoutTrailingZeros = stripped.replace(/0+$/, '');
+      const trailingZeros = stripped.length - withoutTrailingZeros.length;
+      const netShift = exp - fracPart.length + trailingZeros;
+      if (
+        netShift >= 0 &&
+        withoutTrailingZeros.length + netShift <= MAX_SCIENTIFIC_INT_DIGITS
+      ) {
+        const expanded = `${sign}${withoutTrailingZeros}${'0'.repeat(netShift)}`;
+        const big = BigInt(expanded);
+        return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(big) : big;
+      }
+    }
+  }
+
+  const num = Number(raw);
+  if (!Number.isFinite(num)) {
+    throw new Error(`Numeric value ${raw} overflows IEEE 754 double precision`);
+  }
+  return num;
+}
 
 /**
  * Normalizes `bigint` values that fit safely within IEEE 754 `Number` back to `number`,
- * keeping only integers outside `[-2^53 + 1, 2^53 - 1]` as `bigint`.
+ * keeping only integers outside `[-2^53 + 1, 2^53 - 1]` as `bigint`, and converts `Map`
+ * instances into plain objects with safe own properties (preserving keys like `__proto__`).
  */
 function normalizeSafeBigInts(val: unknown): unknown {
   if (typeof val === 'bigint') {
@@ -86,10 +142,17 @@ function normalizeSafeBigInts(val: unknown): unknown {
   if (Array.isArray(val)) {
     return val.map(normalizeSafeBigInts);
   }
+  if (val instanceof Map) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of val.entries()) {
+      setOwnDataProperty(out, String(k), normalizeSafeBigInts(v));
+    }
+    return out;
+  }
   if (val && typeof val === 'object' && !(val instanceof Date)) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-      out[k] = normalizeSafeBigInts(v);
+      setOwnDataProperty(out, k, normalizeSafeBigInts(v));
     }
     return out;
   }
@@ -187,7 +250,7 @@ function parseJsonLosslessWithLocation(source: string): unknown {
         const key = readString();
         skipWs();
         i += 1; // ':'
-        obj[key] = readValue();
+        setOwnDataProperty(obj, key, readValue());
         skipWs();
         if (source[i] === ',') {
           i += 1;
@@ -222,11 +285,7 @@ function parseJsonLosslessWithLocation(source: string): unknown {
     if (raw === 'true') return true;
     if (raw === 'false') return false;
     if (raw === 'null') return null;
-    if (/^-?\d+$/.test(raw)) {
-      const big = BigInt(raw);
-      return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(raw) : big;
-    }
-    return Number(raw);
+    return parseJsonNumberLossless(raw);
   };
 
   return readValue();
@@ -240,7 +299,10 @@ function stringifyJsonLossless(value: unknown, indent: number): string {
     if (typeof val === 'boolean') return val ? 'true' : 'false';
     if (typeof val === 'bigint') return val.toString();
     if (typeof val === 'number') {
-      return Number.isFinite(val) ? String(val) : 'null';
+      if (!Number.isFinite(val)) {
+        throw new Error(`JSON does not support non-finite numbers (${String(val)})`);
+      }
+      return String(val);
     }
     if (typeof val === 'string') return JSON.stringify(val);
     if (val instanceof Date) return JSON.stringify(val.toISOString());
@@ -313,10 +375,10 @@ export function convertStructuredData(
     if (detectedSource === 'json') {
       value = parseJsonLosslessWithLocation(input);
     } else if (detectedSource === 'toml') {
-      value = parseToml(input, { integersAsBigInt: 'asNeeded' });
+      value = normalizeSafeBigInts(parseToml(input, { integersAsBigInt: 'asNeeded' }));
     } else {
       value = normalizeSafeBigInts(
-        parseYaml(input, { lineCounter: yamlLineCounter, intAsBigInt: true })
+        parseYaml(input, { lineCounter: yamlLineCounter, intAsBigInt: true, mapAsMap: true })
       );
     }
   } catch (err) {

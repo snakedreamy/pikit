@@ -6,6 +6,8 @@
 import { fetchAppMeta } from '../../lib/api';
 import { wipeBytes } from '../../lib/crypto';
 import {
+  computeDropMaxWireBytes,
+  computeDropTransferWireBytes,
   createEphemeralDropIdentity,
   decodeDropEof,
   decodeDropMeta,
@@ -19,8 +21,6 @@ import {
   type DropCryptoSession,
   type DropTransferMeta,
 } from './protocol';
-
-export type DropTransportMode = 'pending' | 'p2p' | 'relay';
 
 export type DropErrorCode =
   | 'expired'
@@ -294,14 +294,36 @@ export function startDropSendSession(
         return;
       }
 
-      if (mode === 'relay' && totalBytes > maxRelayMb * 1024 * 1024) {
+      const totalChunks =
+        totalBytes === 0 ? 0 : Math.ceil(totalBytes / DROP_CHUNK_PLAINTEXT_BYTES);
+      const metaPlain = encodeDropMeta({
+        kind: payload.kind,
+        fileName: payload.kind === 'file' ? payload.fileName : undefined,
+        mimeType:
+          payload.kind === 'file'
+            ? payload.mimeType || 'application/octet-stream'
+            : 'text/plain;charset=utf-8',
+        totalBytes,
+        totalChunks,
+      });
+      const eofPlain = encodeDropEof({ totalBytes, totalChunks });
+      const totalWireBytes = computeDropTransferWireBytes(
+        metaPlain.byteLength,
+        totalBytes,
+        totalChunks,
+        eofPlain.byteLength
+      );
+
+      if (
+        mode === 'relay' &&
+        (totalBytes > maxRelayMb * 1024 * 1024 ||
+          totalWireBytes > computeDropMaxWireBytes(maxRelayMb))
+      ) {
         if (textBytes) wipeBytes(textBytes);
         fail('relay_limit_exceeded', true);
         return;
       }
 
-      const totalChunks =
-        totalBytes === 0 ? 0 : Math.ceil(totalBytes / DROP_CHUNK_PLAINTEXT_BYTES);
       expectedDoneAck = { totalBytes, totalChunks };
 
       const sendFrame = async (wire: Uint8Array) => {
@@ -325,22 +347,7 @@ export function startDropSendSession(
       });
 
       // 1. Encrypted META frame (`seq = 0`)
-      await sendFrame(
-        cryptoSession.sealS2RFrame(
-          DROP_FRAME_META,
-          0,
-          encodeDropMeta({
-            kind: payload.kind,
-            fileName: payload.kind === 'file' ? payload.fileName : undefined,
-            mimeType:
-              payload.kind === 'file'
-                ? payload.mimeType || 'application/octet-stream'
-                : 'text/plain;charset=utf-8',
-            totalBytes,
-            totalChunks,
-          })
-        )
-      );
+      await sendFrame(cryptoSession.sealS2RFrame(DROP_FRAME_META, 0, metaPlain));
 
       cb.onProgress(0, totalBytes);
 
@@ -368,11 +375,7 @@ export function startDropSendSession(
 
       // 3. Explicit authenticated EOF frame (`seq = totalChunks + 1`)
       await sendFrame(
-        cryptoSession.sealS2RFrame(
-          DROP_FRAME_EOF,
-          totalChunks + 1,
-          encodeDropEof({ totalBytes, totalChunks })
-        )
+        cryptoSession.sealS2RFrame(DROP_FRAME_EOF, totalChunks + 1, eofPlain)
       );
 
       // Wait for receiver's authenticated `done` acknowledgment before closing sockets

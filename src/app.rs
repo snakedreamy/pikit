@@ -220,10 +220,11 @@ max_download_mb = 2
 max_upload_mb = 1
 per_ip_concurrency = 2
 global_concurrency = 4
-per_ip_requests_per_minute = 4
+per_ip_requests_per_minute = 60
 daily_quota_gb = 1
 "#;
-        let cfg = Config::from_toml_str(cfg_toml).unwrap();
+        let mut cfg = Config::from_toml_str(cfg_toml).unwrap();
+        cfg.speedtest.per_ip_requests_per_minute = 4;
         let app = build_router(AppState::new(Arc::new(cfg)));
 
         // 1. Ping returns an empty 200 OK response

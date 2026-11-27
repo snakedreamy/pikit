@@ -25,23 +25,39 @@
 
   let leftPickerEl: HTMLInputElement | undefined = $state();
   let rightPickerEl: HTMLInputElement | undefined = $state();
+  let fileError = $state('');
+  let leftReadSeq = 0;
+  let rightReadSeq = 0;
 
   async function loadSideFile(side: 'left' | 'right', file: File) {
-    const ab = await file.arrayBuffer();
-    const inspected = await inspectDiffFileBytes(file.name, ab);
-    if (side === 'left') {
-      leftFile = inspected;
-      if (!inspected.isBinary) left = inspected.text;
-    } else {
-      rightFile = inspected;
-      if (!inspected.isBinary) right = inspected.text;
+    const seq = side === 'left' ? ++leftReadSeq : ++rightReadSeq;
+    fileError = '';
+    try {
+      const ab = await file.arrayBuffer();
+      const inspected = await inspectDiffFileBytes(file.name, ab);
+      const activeSeq = side === 'left' ? leftReadSeq : rightReadSeq;
+      if (seq !== activeSeq) return;
+      if (side === 'left') {
+        leftFile = inspected;
+        if (!inspected.isBinary) left = inspected.text;
+      } else {
+        rightFile = inspected;
+        if (!inspected.isBinary) right = inspected.text;
+      }
+    } catch {
+      const activeSeq = side === 'left' ? leftReadSeq : rightReadSeq;
+      if (seq !== activeSeq) return;
+      fileError = t('fileReadError', { name: file.name }, NS);
     }
   }
 
   function clearSideFile(side: 'left' | 'right') {
+    fileError = '';
     if (side === 'left') {
+      leftReadSeq += 1;
       leftFile = null;
     } else {
+      rightReadSeq += 1;
       rightFile = null;
     }
   }
@@ -134,6 +150,8 @@
           rows={6}
           mono
           oninput={() => {
+            leftReadSeq += 1;
+            fileError = '';
             if (leftFile) leftFile = null;
           }}
         />
@@ -181,12 +199,22 @@
           rows={6}
           mono
           oninput={() => {
+            rightReadSeq += 1;
+            fileError = '';
             if (rightFile) rightFile = null;
           }}
         />
       {/if}
     </div>
   </div>
+
+  {#if fileError}
+    <div class="glass df-binary" role="alert">
+      <div class="df-binary__head">
+        <Badge tone="danger" dot>{fileError}</Badge>
+      </div>
+    </div>
+  {/if}
 
   {#if binaryMode}
     <div class="glass df-binary" data-testid="diff-binary-panel">

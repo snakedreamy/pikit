@@ -17,6 +17,8 @@ export interface ParsedContainerRun {
   restart?: string;
   entrypoint?: string;
   readOnly: boolean;
+  init: boolean;
+  publishAll: boolean;
   interactive: boolean;
   tty: boolean;
   privileged: boolean;
@@ -28,6 +30,8 @@ export interface ParsedContainerRun {
   extraHosts: string[];
   cpus?: string;
   memory?: string;
+  shmSize?: string;
+  pidsLimit?: string;
   pull?: string;
   warnings: string[];
 }
@@ -139,7 +143,55 @@ export function tokenizeShellCommand(raw: string): string[] {
 }
 
 const VALUE_SHORT_FLAGS = new Set(['p', 'v', 'e', 'l', 'h', 'w', 'u', 'm']);
-const BOOL_SHORT_FLAGS = new Set(['d', 'i', 't']);
+const BOOL_SHORT_FLAGS = new Set(['d', 'i', 't', 'P', 'q']);
+
+const KNOWN_UNMAPPED_BOOL_LONG_FLAGS = new Set([
+  '--no-healthcheck',
+  '--oom-kill-disable',
+  '--sig-proxy',
+  '--quiet',
+  '--replace',
+]);
+
+const KNOWN_UNMAPPED_VALUE_LONG_FLAGS = new Set([
+  '--cgroupns',
+  '--cidfile',
+  '--cpus-period',
+  '--cpu-shares',
+  '--dns',
+  '--dns-opt',
+  '--dns-option',
+  '--dns-search',
+  '--domainname',
+  '--gpus',
+  '--group-add',
+  '--health-cmd',
+  '--health-interval',
+  '--health-retries',
+  '--health-start-period',
+  '--health-timeout',
+  '--ip',
+  '--ip6',
+  '--ipc',
+  '--isolation',
+  '--log-driver',
+  '--log-opt',
+  '--mac-address',
+  '--memory-reservation',
+  '--memory-swap',
+  '--network-alias',
+  '--pid',
+  '--platform',
+  '--runtime',
+  '--stop-signal',
+  '--stop-timeout',
+  '--sysctl',
+  '--tz',
+  '--ulimit',
+  '--userns',
+  '--uts',
+  '--volumes-from',
+]);
 
 function deriveServiceName(image: string): string {
   const withoutDigest = image.split('@')[0];
@@ -173,6 +225,8 @@ export function parseContainerRunTokens(tokens: readonly string[]): ParsedContai
     envFiles: [],
     labels: [],
     readOnly: false,
+    init: false,
+    publishAll: false,
     interactive: false,
     tty: false,
     privileged: false,
@@ -253,6 +307,12 @@ export function parseContainerRunTokens(tokens: readonly string[]): ParsedContai
         case '--read-only':
           state.readOnly = inlineVal !== 'false';
           break;
+        case '--init':
+          state.init = inlineVal !== 'false';
+          break;
+        case '--publish-all':
+          state.publishAll = inlineVal !== 'false';
+          break;
         case '--detach':
         case '--rm':
           break;
@@ -289,17 +349,27 @@ export function parseContainerRunTokens(tokens: readonly string[]): ParsedContai
         case '--memory':
           state.memory = val();
           break;
+        case '--shm-size':
+          state.shmSize = val();
+          break;
+        case '--pids-limit':
+          state.pidsLimit = val();
+          break;
         case '--pull':
           state.pull = val();
           break;
         default:
           if (inlineVal !== undefined) {
             state.warnings.push(`Unmapped flag preserved in notes: ${tok}`);
-          } else if (idx + 1 < tokens.length && !tokens[idx + 1].startsWith('-')) {
+          } else if (KNOWN_UNMAPPED_BOOL_LONG_FLAGS.has(flag)) {
+            state.warnings.push(`Unmapped boolean flag ignored: ${flag}`);
+          } else if (KNOWN_UNMAPPED_VALUE_LONG_FLAGS.has(flag)) {
             const skipped = takeNextVal(flag);
             state.warnings.push(`Unmapped flag ignored: ${flag} ${skipped}`);
           } else {
-            state.warnings.push(`Unmapped boolean flag ignored: ${flag}`);
+            throw new Error(
+              `Unknown flag ${flag} without '='; pass ${flag}=<value> if it takes an argument or remove it so the image name is not misread`
+            );
           }
           break;
       }
@@ -314,6 +384,7 @@ export function parseContainerRunTokens(tokens: readonly string[]): ParsedContai
       if (BOOL_SHORT_FLAGS.has(ch)) {
         if (ch === 'i') state.interactive = true;
         if (ch === 't') state.tty = true;
+        if (ch === 'P') state.publishAll = true;
         continue;
       }
       if (VALUE_SHORT_FLAGS.has(ch)) {
@@ -442,9 +513,17 @@ function renderComposeYaml(p: ParsedContainerRun, parsedMounts: readonly ParsedM
   if (p.workdir) lines.push(`    working_dir: ${yamlScalar(p.workdir)}`);
   if (p.entrypoint) lines.push(`    entrypoint: ${JSON.stringify(p.entrypoint)}`);
   if (p.readOnly) lines.push('    read_only: true');
+  if (p.init) lines.push('    init: true');
   if (p.privileged) lines.push('    privileged: true');
   if (p.interactive) lines.push('    stdin_open: true');
   if (p.tty) lines.push('    tty: true');
+  if (p.shmSize) lines.push(`    shm_size: ${yamlScalar(p.shmSize)}`);
+  if (p.pidsLimit) {
+    const numPids = Number(p.pidsLimit);
+    lines.push(
+      `    pids_limit: ${Number.isInteger(numPids) ? String(numPids) : yamlScalar(p.pidsLimit)}`
+    );
+  }
 
   if (p.network) {
     if (['host', 'none', 'bridge'].includes(p.network) || p.network.startsWith('container:')) {
@@ -534,7 +613,8 @@ function renderComposeYaml(p: ParsedContainerRun, parsedMounts: readonly ParsedM
   if (namedVolumes.length > 0) {
     lines.push('', 'volumes:');
     for (const nv of namedVolumes) {
-      lines.push(`  ${yamlScalar(nv)}:`);
+      // Preserve exact existing Docker volume name instead of prefixing `<project>_<nv>`, while still creating it on fresh hosts
+      lines.push(`  ${yamlScalar(nv)}:`, `    name: ${yamlScalar(nv)}`);
     }
   }
 
@@ -627,6 +707,10 @@ function renderPodmanQuadlet(p: ParsedContainerRun, opts?: DockerConvertOptions)
   }
 
   if (p.readOnly) lines.push('ReadOnly=true');
+  if (p.init) lines.push('RunInit=true');
+  if (p.publishAll) lines.push('PublishAllPorts=true');
+  if (p.shmSize) lines.push(`ShmSize=${assertSafeQuadletToken('--shm-size', p.shmSize)}`);
+  if (p.pidsLimit) lines.push(`PidsLimit=${assertSafeQuadletToken('--pids-limit', p.pidsLimit)}`);
   if (p.tty) lines.push('PodmanArgs=--tty');
 
   for (const port of p.ports) {

@@ -32,6 +32,7 @@ export interface SpeedtestOptions {
   parallelStreams?: number;
   maxDownloadMb?: number;
   maxUploadMb?: number;
+  requestsPerMinute?: number;
   phaseDurationMs?: number;
   warmupMs?: number;
   sampleIntervalMs?: number;
@@ -96,10 +97,29 @@ export async function runSpeedtestSession(
   opts: SpeedtestOptions,
   signal: AbortSignal
 ): Promise<SpeedtestProgress> {
-  const pingCount = opts.pingCount ?? 20;
-  const maxStreams = Math.max(1, Math.floor(opts.parallelStreams ?? 6));
+  const rpmBudget =
+    typeof opts.requestsPerMinute === 'number' &&
+    Number.isFinite(opts.requestsPerMinute) &&
+    opts.requestsPerMinute > 0
+      ? Math.floor(opts.requestsPerMinute)
+      : null;
+  const requestedPingCount = opts.pingCount ?? 20;
+  // Scale ping probe count and worker streams down when the server has a tight per-IP RPM budget (< 120 rpm)
+  const pingCount =
+    rpmBudget !== null && rpmBudget < 120
+      ? Math.min(requestedPingCount, Math.max(4, Math.floor(rpmBudget / 5)))
+      : requestedPingCount;
+  const budgetStreamCap =
+    rpmBudget !== null && rpmBudget < 120
+      ? Math.max(1, Math.floor(rpmBudget / 35))
+      : 8;
+  const maxStreams = Math.min(
+    budgetStreamCap,
+    Math.max(1, Math.floor(opts.parallelStreams ?? 6))
+  );
   const downStreams = Math.min(6, maxStreams);
   const upStreams = Math.min(4, maxStreams);
+  const tightRequestBudget = rpmBudget !== null && rpmBudget < 120;
   const maxDownBytes = Math.max(MIB, Math.floor((opts.maxDownloadMb ?? 256) * MIB));
   const maxUpBytes = Math.max(64 * KIB, Math.floor((opts.maxUploadMb ?? 64) * MIB));
   const durationMs = opts.phaseDurationMs ?? 10_000;
@@ -187,6 +207,7 @@ export async function runSpeedtestSession(
   state.uploadMbps = await runUploadPhase({
     streams: upStreams,
     maxChunkBytes: maxUpBytes,
+    tightRequestBudget,
     durationMs,
     warmupMs,
     sampleMs,
@@ -207,6 +228,7 @@ export async function runSpeedtestSession(
 interface TransferPhaseArgs {
   streams: number;
   maxChunkBytes: number;
+  tightRequestBudget?: boolean;
   durationMs: number;
   warmupMs: number;
   sampleMs: number;
@@ -333,6 +355,7 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
   const {
     streams,
     maxChunkBytes,
+    tightRequestBudget,
     durationMs,
     warmupMs,
     sampleMs,
@@ -401,10 +424,10 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
       await new Promise((r) => window.setTimeout(r, workerIdx * 35));
     }
 
-    // Start at 128 KiB so even 2..50 Mbps remote port-forwarded links confirm chunks every 50..400ms; fast LANs scale up within 0.3s
+    // Start at 128 KiB (or 1 MiB under tight RPM budgets) so remote links confirm quickly while staying within request limits
     const minChunk = Math.min(64 * KIB, maxChunkBytes);
     const maxChunk = Math.max(minChunk, maxChunkBytes);
-    let chunkBytes = Math.min(128 * KIB, maxChunk);
+    let chunkBytes = Math.min(tightRequestBudget ? MIB : 128 * KIB, maxChunk);
     let lastReqDurationMs = 0;
 
     while (acceptingNew && !phaseCtrl.signal.aborted) {
@@ -432,11 +455,19 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
           signal: phaseCtrl.signal,
         });
         checkStatus(res.status);
-        const data = (await res.json()) as { receivedBytes?: number };
-        const confirmed =
-          typeof data.receivedBytes === 'number' && data.receivedBytes > 0
-            ? data.receivedBytes
-            : blob.size;
+        const data = (await res.json()) as { receivedBytes?: unknown };
+        if (
+          typeof data?.receivedBytes !== 'number' ||
+          !Number.isFinite(data.receivedBytes) ||
+          data.receivedBytes <= 0 ||
+          data.receivedBytes > blob.size
+        ) {
+          throw new SpeedtestRunError(
+            'network',
+            'Invalid or zero server upload confirmation'
+          );
+        }
+        const confirmed = Math.floor(data.receivedBytes);
         totalBytes += confirmed;
 
         lastReqDurationMs = Math.max(1, performance.now() - reqStart);

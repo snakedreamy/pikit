@@ -21,5 +21,6 @@
   "binaryHint": "检测到二进制 NUL 字节，已自动切换为字节长度与 SHA-256 摘要校验，避免乱码渲染。",
   "binaryMissingPeer": "请在另一侧导入第二个文件以比对 SHA-256 摘要。",
   "sizeLabel": "字节大小",
-  "sha256Label": "SHA-256"
+  "sha256Label": "SHA-256",
+  "fileReadError": "读取文件 {{name}} 失败。"
 }

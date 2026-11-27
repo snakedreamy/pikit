@@ -6,6 +6,7 @@
   "importFile": "Open File",
   "dropHint": "Drop a text file here or type directly",
   "binaryWarning": "Binary file detected ({{name}} · {{size}}) — NUL bytes rejected to avoid garbled text.",
+  "fileReadError": "Failed to read file {{name}}.",
   "statGraphemes": "Graphemes (Visual)",
   "subCodePoints": "Code points: {{count}}",
   "statBytes": "UTF-8 Bytes",

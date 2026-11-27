@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runSpeedtestSession, sliceUploadBlob } from './engine';
+import { runSpeedtestSession, sliceUploadBlob, SpeedtestRunError } from './engine';
 
 describe('speedtest engine upload drain', () => {
   afterEach(() => {
@@ -152,5 +152,95 @@ describe('speedtest engine upload drain', () => {
     ).rejects.toThrow(/Aborted/);
 
     expect(abortedUploads).toBeGreaterThan(0);
+  });
+
+  it('rejects upload responses with missing or zero receivedBytes instead of crediting local blob.size', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith('/api/speed/ping')) {
+          return Promise.resolve(new Response('ok', { status: 200 }));
+        }
+        if (url.startsWith('/api/speed/down')) {
+          return Promise.resolve(new Response(new Uint8Array(64 * 1024), { status: 200 }));
+        }
+        if (url.startsWith('/api/speed/up')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ receivedBytes: 0 }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      })
+    );
+
+    if (typeof globalThis.window === 'undefined') {
+      vi.stubGlobal('window', globalThis);
+    }
+
+    const ctrl = new AbortController();
+    await expect(
+      runSpeedtestSession(
+        {
+          pingCount: 1,
+          parallelStreams: 1,
+          phaseDurationMs: 120,
+          warmupMs: 20,
+          sampleIntervalMs: 40,
+          onProgress: () => {},
+        },
+        ctrl.signal
+      )
+    ).rejects.toBeInstanceOf(SpeedtestRunError);
+  });
+
+  it('scales down ping count and parallel streams under tight requestsPerMinute budget', async () => {
+    let pingCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.startsWith('/api/speed/ping')) {
+          pingCalls += 1;
+          return Promise.resolve(new Response('ok', { status: 200 }));
+        }
+        if (url.startsWith('/api/speed/down')) {
+          return Promise.resolve(new Response(new Uint8Array(64 * 1024), { status: 200 }));
+        }
+        if (url.startsWith('/api/speed/up')) {
+          const bodyBlob = init?.body as Blob | undefined;
+          return Promise.resolve(
+            new Response(JSON.stringify({ receivedBytes: bodyBlob?.size ?? 65536 }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+        }
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      })
+    );
+
+    if (typeof globalThis.window === 'undefined') {
+      vi.stubGlobal('window', globalThis);
+    }
+
+    const ctrl = new AbortController();
+    const res = await runSpeedtestSession(
+      {
+        pingCount: 20,
+        parallelStreams: 6,
+        requestsPerMinute: 60,
+        phaseDurationMs: 60,
+        warmupMs: 10,
+        sampleIntervalMs: 30,
+        onProgress: () => {},
+      },
+      ctrl.signal
+    );
+    expect(res.phase).toBe('done');
+    expect(pingCalls).toBe(12);
   });
 });

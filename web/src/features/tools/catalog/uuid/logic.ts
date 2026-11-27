@@ -36,7 +36,9 @@ export function generateUuidV7(nowMs = Date.now(), opts?: UuidFormatOptions): st
 
   let ts = Math.max(0, Math.floor(nowMs));
   let seq: number;
-  if (ts === lastV7Ms) {
+  if (ts <= lastV7Ms) {
+    // Preserve strict monotonic ordering even across same-ms bursts or NTP backward clock steps (RFC 9562 §6.2)
+    ts = lastV7Ms;
     lastV7Seq = (lastV7Seq + 1) & 0x0fff;
     if (lastV7Seq === 0) {
       ts += 1;
@@ -45,7 +47,8 @@ export function generateUuidV7(nowMs = Date.now(), opts?: UuidFormatOptions): st
     seq = lastV7Seq;
   } else {
     lastV7Ms = ts;
-    lastV7Seq = ((rand[6] & 0x0f) << 8) | rand[7];
+    // Seed initial 12-bit sequence in the lower half (`0..2047`) to leave guaranteed headroom before ms rollover
+    lastV7Seq = ((rand[6] & 0x07) << 8) | rand[7];
     seq = lastV7Seq;
   }
 

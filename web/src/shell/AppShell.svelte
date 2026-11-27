@@ -160,8 +160,13 @@
   }
 
   async function handleLogout() {
-    await logoutSession();
-    onloggedout?.();
+    try {
+      await logoutSession();
+    } catch {
+      // Clear local session state even if the network or reverse proxy fails during logout
+    } finally {
+      onloggedout?.();
+    }
   }
 </script>
 

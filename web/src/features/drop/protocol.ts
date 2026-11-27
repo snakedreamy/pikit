@@ -20,8 +20,43 @@ export const DROP_FRAME_EOF = 0x03;
 
 export const DROP_HEADER_BYTES = 9; // 1-byte kind + 8-byte big-endian sequence number
 export const DROP_TAG_BYTES = 16;
+export const DROP_FRAME_OVERHEAD_BYTES = DROP_HEADER_BYTES + DROP_TAG_BYTES; // 25 bytes per frame
 export const DROP_MAX_WIRE_FRAME_BYTES = 64 * 1024; // Matches backend `MAX_RELAY_BINARY_BYTES` (65,536 bytes)
 export const DROP_CHUNK_PLAINTEXT_BYTES = 64 * 1024 - 64; // 65,472 bytes -> max wire frame 65,497 <= 65,536 bytes
+export const DROP_ENVELOPE_WIRE_ALLOWANCE_BYTES = 4096; // Matches backend `DROP_ENVELOPE_WIRE_ALLOWANCE_BYTES`
+
+/**
+ * Computes the exact WebSocket binary relay budget enforced by the server for `maxRelayMb`,
+ * including per-chunk AEAD headers/tags and the `META` + `EOF` control frame envelope.
+ */
+export function computeDropMaxWireBytes(maxRelayMb: number): number {
+  const maxPlain = Math.max(0, Math.floor(maxRelayMb)) * 1024 * 1024;
+  const maxChunks = Math.ceil(maxPlain / DROP_CHUNK_PLAINTEXT_BYTES);
+  return (
+    maxPlain +
+    maxChunks * DROP_FRAME_OVERHEAD_BYTES +
+    DROP_ENVELOPE_WIRE_ALLOWANCE_BYTES
+  );
+}
+
+/**
+ * Computes the exact total ciphertext wire bytes that a transfer will emit across `META` + `CHUNK`s + `EOF`.
+ */
+export function computeDropTransferWireBytes(
+  metaPlainBytes: number,
+  totalBytes: number,
+  totalChunks: number,
+  eofPlainBytes: number
+): number {
+  return (
+    DROP_FRAME_OVERHEAD_BYTES +
+    metaPlainBytes +
+    totalBytes +
+    totalChunks * DROP_FRAME_OVERHEAD_BYTES +
+    DROP_FRAME_OVERHEAD_BYTES +
+    eofPlainBytes
+  );
+}
 
 export interface DropTransferMeta {
   kind: 'text' | 'file';

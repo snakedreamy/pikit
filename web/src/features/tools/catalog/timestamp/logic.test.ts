@@ -18,7 +18,12 @@ describe('timestamp converter logic', () => {
     expect(fromIso.epochSec).toBe(1700000000);
   });
 
-  it('returns null on invalid date strings', () => {
+  it('returns null on invalid date strings and impossible calendar rollovers', () => {
     expect(parseFlexibleTimestamp('not-a-timestamp')).toBeNull();
+    expect(parseFlexibleTimestamp('2026-02-30')).toBeNull();
+    expect(parseFlexibleTimestamp('2026-02-29T10:00:00Z')).toBeNull();
+    expect(parseFlexibleTimestamp('2026-04-31')).toBeNull();
+    expect(parseFlexibleTimestamp('30 Feb 2026')).toBeNull();
+    expect(parseFlexibleTimestamp('2024-02-29T00:00:00Z')?.isoUtc).toBe('2024-02-29T00:00:00.000Z');
   });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { wipeBytes } from '../../lib/crypto';
 import {
+  computeDropMaxWireBytes,
+  computeDropTransferWireBytes,
   createEphemeralDropIdentity,
   decodeDropEof,
   decodeDropMeta,
@@ -161,5 +163,25 @@ describe('/drop end-to-end cryptographic protocol (X25519 + PIN HKDF + mutual MA
     expect(formatSixDigitCode('482910')).toBe('482 910');
     expect(sanitizeTransferFileName('..\\..\\etc\\shadow')).toBe('shadow');
     expect(sanitizeTransferFileName('...')).toBe('drop-payload.bin');
+  });
+
+  it('computes exact wire ciphertext bytes and fits an exact 1 MiB file within a 1 MiB relay cap', () => {
+    const exactOneMiB = 1024 * 1024;
+    const totalChunks = Math.ceil(exactOneMiB / DROP_CHUNK_PLAINTEXT_BYTES);
+    const metaBytes = encodeDropMeta({
+      kind: 'file',
+      fileName: 'exact-1mib.bin',
+      mimeType: 'application/octet-stream',
+      totalBytes: exactOneMiB,
+      totalChunks,
+    });
+    const eofBytes = encodeDropEof({ totalBytes: exactOneMiB, totalChunks });
+    const wireBytes = computeDropTransferWireBytes(
+      metaBytes.byteLength,
+      exactOneMiB,
+      totalChunks,
+      eofBytes.byteLength
+    );
+    expect(wireBytes).toBeLessThanOrEqual(computeDropMaxWireBytes(1));
   });
 });

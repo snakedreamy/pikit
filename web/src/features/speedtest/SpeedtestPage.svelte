@@ -180,6 +180,7 @@
           parallelStreams: speedtestLimits?.maxStreams,
           maxDownloadMb: speedtestLimits?.maxDownloadMb,
           maxUploadMb: speedtestLimits?.maxUploadMb,
+          requestsPerMinute: speedtestLimits?.requestsPerMinute,
           phaseDurationMs: timing.phaseDurationMs,
           warmupMs: timing.warmupMs,
           onProgress: (snap) => {

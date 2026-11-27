@@ -43,6 +43,7 @@ pub struct SpeedtestLimitsMeta {
     pub max_download_mb: u64,
     pub max_upload_mb: u64,
     pub max_streams: usize,
+    pub requests_per_minute: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +99,7 @@ pub async fn get_meta(State(state): State<AppState>, headers: HeaderMap) -> Resp
                 .per_ip_concurrency
                 .min(cfg.speedtest.global_concurrency)
                 .clamp(1, 8),
+            requests_per_minute: cfg.speedtest.per_ip_requests_per_minute,
         });
         let drop_limits = cfg.drop.enabled.then(|| DropLimitsMeta {
             code_ttl_seconds: cfg.drop.code_ttl_seconds,
