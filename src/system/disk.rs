@@ -61,15 +61,97 @@ const IGNORED_FS_TYPES: &[&str] = &[
     "fuse.gvfsd-fuse",
 ];
 
-const NETWORK_OR_POOL_FS: &[&str] = &["zfs", "nfs", "nfs4", "cifs", "smb3", "virtiofs", "9p"];
+const NETWORK_OR_POOL_FS: &[&str] = &[
+    "zfs",
+    "nfs",
+    "nfs4",
+    "cifs",
+    "smb3",
+    "virtiofs",
+    "9p",
+    "fuse.sshfs",
+    "fuse.rclone",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiskProbeScope {
+    All,
+    LocalOnly,
+    NetworkOnly,
+}
+
+pub fn is_network_fs_type(fs_type: &str) -> bool {
+    matches!(
+        fs_type,
+        "nfs"
+            | "nfs4"
+            | "cifs"
+            | "smb3"
+            | "9p"
+            | "fuse.sshfs"
+            | "fuse.rclone"
+            | "ceph"
+            | "glusterfs"
+    )
+}
+
+fn scope_matches_fs(scope: DiskProbeScope, is_net: bool) -> bool {
+    match scope {
+        DiskProbeScope::All => true,
+        DiskProbeScope::LocalOnly => !is_net,
+        DiskProbeScope::NetworkOnly => is_net,
+    }
+}
 
 /// Samples storage telemetry: probes `[[system.disks]]` when explicitly configured,
 /// otherwise auto-discovers and deduplicates real mounted disks on the host or container.
 pub fn sample_disks(configured: &[DiskConfig]) -> Vec<DiskTelemetryDto> {
+    sample_disks_scoped(configured, DiskProbeScope::All)
+}
+
+pub fn sample_disks_scoped(
+    configured: &[DiskConfig],
+    scope: DiskProbeScope,
+) -> Vec<DiskTelemetryDto> {
     if !configured.is_empty() {
-        return configured.iter().map(sample_single_disk).collect();
+        let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
+        return configured
+            .iter()
+            .filter(|d| scope_matches_fs(scope, is_path_on_network_mount(&mountinfo, &d.path)))
+            .map(sample_single_disk)
+            .collect();
     }
-    discover_and_sample_disks()
+    discover_and_sample_disks(scope)
+}
+
+fn is_path_on_network_mount(mountinfo: &str, target_path: &str) -> bool {
+    let mut best_len = 0usize;
+    let mut best_is_net = false;
+    for line in mountinfo.lines() {
+        let Some((left, right)) = line.split_once(" - ") else {
+            continue;
+        };
+        let left_fields: Vec<&str> = left.split_whitespace().collect();
+        let right_fields: Vec<&str> = right.split_whitespace().collect();
+        if left_fields.len() < 6 || right_fields.len() < 2 {
+            continue;
+        }
+        let mp = unescape_mount_path(left_fields[4]);
+        let fs_type = right_fields[0];
+        let matches_prefix = if mp == "/" {
+            target_path.starts_with('/')
+        } else {
+            target_path == mp
+                || target_path
+                    .strip_prefix(&mp)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        };
+        if matches_prefix && mp.len() >= best_len {
+            best_len = mp.len();
+            best_is_net = is_network_fs_type(fs_type);
+        }
+    }
+    best_is_net
 }
 
 pub fn sample_single_disk(disk: &DiskConfig) -> DiskTelemetryDto {
@@ -205,6 +287,17 @@ pub fn parse_mountinfo_candidates<F>(content: &str, is_dir_fn: F) -> Vec<MountCa
 where
     F: Fn(&str) -> bool,
 {
+    parse_mountinfo_candidates_scoped(content, DiskProbeScope::All, is_dir_fn)
+}
+
+pub fn parse_mountinfo_candidates_scoped<F>(
+    content: &str,
+    scope: DiskProbeScope,
+    is_dir_fn: F,
+) -> Vec<MountCandidate>
+where
+    F: Fn(&str) -> bool,
+{
     let mut best_by_source: HashMap<String, MountCandidate> = HashMap::new();
     let mut source_order: Vec<String> = Vec::new();
 
@@ -224,6 +317,10 @@ where
         let source = unescape_mount_path(right_fields[1]);
 
         if IGNORED_FS_TYPES.contains(&fs_type.as_str()) {
+            continue;
+        }
+        // Filter by scope BEFORE touching the filesystem (`is_dir_fn`) so a hung NFS mount never blocks local disk discovery
+        if !scope_matches_fs(scope, is_network_fs_type(&fs_type)) {
             continue;
         }
         if is_ignored_mount_point(&mount_point) || is_ignored_block_device(&source) {
@@ -417,7 +514,7 @@ fn detect_hardware_label(source: &str, fs_type: &str) -> String {
     )
 }
 
-fn disambiguate_labels(items: &mut [DiskTelemetryDto]) {
+pub fn disambiguate_disk_labels(items: &mut [DiskTelemetryDto]) {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for item in items.iter() {
         *counts.entry(item.label.clone()).or_insert(0) += 1;
@@ -433,9 +530,9 @@ fn disambiguate_labels(items: &mut [DiskTelemetryDto]) {
     }
 }
 
-fn discover_and_sample_disks() -> Vec<DiskTelemetryDto> {
+fn discover_and_sample_disks(scope: DiskProbeScope) -> Vec<DiskTelemetryDto> {
     let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
-    let candidates = parse_mountinfo_candidates(&mountinfo, |mp| {
+    let candidates = parse_mountinfo_candidates_scoped(&mountinfo, scope, |mp| {
         std::fs::metadata(mp).is_ok_and(|m| m.is_dir())
     });
 
@@ -470,28 +567,33 @@ fn discover_and_sample_disks() -> Vec<DiskTelemetryDto> {
     }
 
     // Fallback for overlay-only containers or non-Linux Unix systems without `/proc/self/mountinfo`: include `/`
-    if let Ok(root_m) = statvfs_metrics("/") {
-        let root_covered = root_m.fsid != 0 && seen_fs.contains(&(root_m.fsid, root_m.blocks))
-            || results.iter().any(|d| d.path == "/");
-        if root_m.total_bytes > 0 && !root_covered {
-            results.insert(
-                0,
-                DiskTelemetryDto {
-                    label: "Root".to_string(),
-                    path: "/".to_string(),
-                    device: None,
-                    fs_type: None,
-                    used_bytes: root_m.used_bytes,
-                    total_bytes: root_m.total_bytes,
-                    available_bytes: root_m.available_bytes,
-                    percent: root_m.percent,
-                    error: None,
-                },
-            );
+    let root_is_net = is_path_on_network_mount(&mountinfo, "/");
+    if scope_matches_fs(scope, root_is_net) {
+        if let Ok(root_m) = statvfs_metrics("/") {
+            let root_covered = root_m.fsid != 0 && seen_fs.contains(&(root_m.fsid, root_m.blocks))
+                || results.iter().any(|d| d.path == "/");
+            if root_m.total_bytes > 0 && !root_covered {
+                results.insert(
+                    0,
+                    DiskTelemetryDto {
+                        label: "Root".to_string(),
+                        path: "/".to_string(),
+                        device: None,
+                        fs_type: None,
+                        used_bytes: root_m.used_bytes,
+                        total_bytes: root_m.total_bytes,
+                        available_bytes: root_m.available_bytes,
+                        percent: root_m.percent,
+                        error: None,
+                    },
+                );
+            }
         }
     }
 
-    disambiguate_labels(&mut results);
+    if scope == DiskProbeScope::All {
+        disambiguate_disk_labels(&mut results);
+    }
     results
 }
 

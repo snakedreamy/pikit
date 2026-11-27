@@ -31,10 +31,15 @@ pub const MAX_RELAY_BINARY_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_CONTROL_BYTES: usize = 256 * 1024;
 /// Bounded per-direction channel depth (~1 MiB worst-case per direction at 64 KiB/frame) for TCP backpressure.
 const RELAY_CHANNEL_CAPACITY: usize = 16;
-/// Initial command deadline after WebSocket upgrade so idle sockets cannot hold connections open.
+/// Initial command deadline after WebSocket upgrade so idle sockets (even sending Ping frames) cannot hold connections open.
 const INITIAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(15);
-/// Paired session idle timeout when neither signaling nor ciphertext frames flow.
+/// Per-frame socket/channel write deadline so zero-window stalled peers cannot hold room permits indefinitely.
+const SEND_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
+const PAIRED_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+/// Paired session idle timeout when neither signaling nor ciphertext frames flow (Ping/Pong does not extend this timer).
 const PAIRED_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+/// Hard wall-clock ceiling for any paired session.
+const MAX_PAIRED_SESSION_DURATION: Duration = Duration::from_secs(1800);
 const MAX_TRACKED_DROP_IPS: usize = 16_384;
 
 struct WaitingRoom {
@@ -65,6 +70,7 @@ enum RelayFrame {
 pub struct DropService {
     cfg: DropConfig,
     rate_limiter: DefaultKeyedRateLimiter<IpAddr>,
+    handshake_sem: Arc<Semaphore>,
     room_sem: Arc<Semaphore>,
     rooms: Mutex<HashMap<String, WaitingRoom>>,
 }
@@ -73,11 +79,13 @@ impl DropService {
     pub fn new(cfg: &DropConfig) -> Self {
         let rpm = NonZeroU32::new(cfg.per_ip_requests_per_minute.max(1)).unwrap();
         let quota = Quota::per_minute(rpm);
+        let max_rooms = cfg.max_rooms.max(1);
 
         Self {
             cfg: cfg.clone(),
             rate_limiter: RateLimiter::keyed(quota),
-            room_sem: Arc::new(Semaphore::new(cfg.max_rooms.max(1))),
+            handshake_sem: Arc::new(Semaphore::new(max_rooms.saturating_mul(2).max(16))),
+            room_sem: Arc::new(Semaphore::new(max_rooms)),
             rooms: Mutex::new(HashMap::new()),
         }
     }
@@ -267,6 +275,15 @@ pub async fn get_drop_ws(
         );
     }
 
+    let Ok(handshake_permit) = Arc::clone(&svc.handshake_sem).try_acquire_owned() else {
+        return http_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            Some("5"),
+            "rooms_full",
+            "Maximum concurrent pairing handshakes reached; please try again shortly",
+        );
+    };
+
     let ws = match ws {
         Ok(upgrade) => upgrade,
         Err(rejection) => return rejection.into_response(),
@@ -275,7 +292,7 @@ pub async fn get_drop_ws(
     let drop_svc = Arc::clone(&state.drop);
     ws.max_message_size(MAX_RELAY_BINARY_BYTES)
         .max_frame_size(MAX_RELAY_BINARY_BYTES)
-        .on_upgrade(move |socket| handle_drop_socket(socket, drop_svc, client_ip))
+        .on_upgrade(move |socket| handle_drop_socket(socket, drop_svc, client_ip, handshake_permit))
 }
 
 #[derive(Deserialize)]
@@ -350,65 +367,83 @@ fn is_allowed_paired_control_type(msg_type: &str) -> bool {
     )
 }
 
+async fn send_ws_bounded(
+    socket: &mut WebSocket,
+    msg: Message,
+    timeout_dur: Duration,
+) -> Result<(), ()> {
+    tokio::time::timeout(timeout_dur, socket.send(msg))
+        .await
+        .map_err(|_| ())?
+        .map_err(|_| ())
+}
+
 async fn send_server_json(
     socket: &mut WebSocket,
     msg: &ServerControlMessage<'_>,
 ) -> Result<(), ()> {
     let text = serde_json::to_string(msg).map_err(|_| ())?;
-    socket
-        .send(Message::Text(text.into()))
-        .await
-        .map_err(|_| ())
+    send_ws_bounded(socket, Message::Text(text.into()), SEND_FRAME_TIMEOUT).await
 }
 
 async fn send_error_and_close(socket: &mut WebSocket, code: &'static str, message: &'static str) {
     let _ = send_server_json(socket, &ServerControlMessage::Error { code, message }).await;
-    let _ = socket.send(Message::Close(None)).await;
+    let _ = send_ws_bounded(socket, Message::Close(None), Duration::from_secs(3)).await;
 }
 
-async fn read_initial_command(
+async fn read_initial_command_with_timeout(
     socket: &mut WebSocket,
+    total_timeout: Duration,
 ) -> Result<InitialClientCommand, (&'static str, &'static str)> {
-    loop {
-        let next_frame = tokio::time::timeout(INITIAL_COMMAND_TIMEOUT, socket.recv())
-            .await
-            .map_err(|_| {
-                (
-                    "handshake_timeout",
-                    "Timed out waiting for initial pairing command",
-                )
-            })?;
-
-        match next_frame {
-            Some(Ok(Message::Text(txt))) => {
-                if txt.len() > MAX_CONTROL_TEXT_BYTES {
-                    return Err(("frame_too_large", "Control message exceeds 32 KiB limit"));
+    let deadline = tokio::time::Instant::now() + total_timeout;
+    tokio::time::timeout_at(deadline, async {
+        loop {
+            match socket.recv().await {
+                Some(Ok(Message::Text(txt))) => {
+                    if txt.len() > MAX_CONTROL_TEXT_BYTES {
+                        return Err(("frame_too_large", "Control message exceeds 32 KiB limit"));
+                    }
+                    return serde_json::from_str::<InitialClientCommand>(txt.as_str())
+                        .map_err(|_| ("bad_command", "Invalid initial pairing command"));
                 }
-                return serde_json::from_str::<InitialClientCommand>(txt.as_str())
-                    .map_err(|_| ("bad_command", "Invalid initial pairing command"));
-            }
-            Some(Ok(Message::Ping(p))) => {
-                let _ = socket.send(Message::Pong(p)).await;
-            }
-            Some(Ok(Message::Pong(_))) => {}
-            Some(Ok(Message::Binary(_))) => {
-                return Err((
-                    "unexpected_binary",
-                    "Binary frames are not allowed before pairing completes",
-                ));
-            }
-            Some(Ok(Message::Close(_))) | None => {
-                return Err(("closed", "Connection closed"));
-            }
-            Some(Err(_)) => {
-                return Err(("frame_too_large", "WebSocket frame rejected"));
+                Some(Ok(Message::Ping(p))) => {
+                    if send_ws_bounded(socket, Message::Pong(p), SEND_FRAME_TIMEOUT)
+                        .await
+                        .is_err()
+                    {
+                        return Err(("closed", "Connection closed"));
+                    }
+                }
+                Some(Ok(Message::Pong(_))) => {}
+                Some(Ok(Message::Binary(_))) => {
+                    return Err((
+                        "unexpected_binary",
+                        "Binary frames are not allowed before pairing completes",
+                    ));
+                }
+                Some(Ok(Message::Close(_))) | None => {
+                    return Err(("closed", "Connection closed"));
+                }
+                Some(Err(_)) => {
+                    return Err(("frame_too_large", "WebSocket frame rejected"));
+                }
             }
         }
-    }
+    })
+    .await
+    .unwrap_or(Err((
+        "handshake_timeout",
+        "Timed out waiting for initial pairing command",
+    )))
 }
 
-async fn handle_drop_socket(mut socket: WebSocket, svc: Arc<DropService>, client_ip: IpAddr) {
-    let cmd = match read_initial_command(&mut socket).await {
+async fn handle_drop_socket(
+    mut socket: WebSocket,
+    svc: Arc<DropService>,
+    client_ip: IpAddr,
+    handshake_permit: OwnedSemaphorePermit,
+) {
+    let cmd = match read_initial_command_with_timeout(&mut socket, INITIAL_COMMAND_TIMEOUT).await {
         Ok(c) => c,
         Err(("closed", _)) => return,
         Err((code, msg)) => {
@@ -416,6 +451,7 @@ async fn handle_drop_socket(mut socket: WebSocket, svc: Arc<DropService>, client
             return;
         }
     };
+    drop(handshake_permit);
 
     match cmd {
         InitialClientCommand::Create { pub_key, salt } => {
@@ -479,7 +515,10 @@ async fn handle_drop_socket(mut socket: WebSocket, svc: Arc<DropService>, client
                     incoming = socket.recv() => {
                         match incoming {
                             Some(Ok(Message::Ping(p))) => {
-                                if socket.send(Message::Pong(p)).await.is_err() {
+                                if send_ws_bounded(&mut socket, Message::Pong(p), SEND_FRAME_TIMEOUT)
+                                    .await
+                                    .is_err()
+                                {
                                     svc.remove_waiting_room(&code);
                                     return;
                                 }
@@ -488,7 +527,7 @@ async fn handle_drop_socket(mut socket: WebSocket, svc: Arc<DropService>, client
                             _ => {
                                 // Sender cancelled, disconnected, or sent an unexpected frame before pairing: destroy room immediately
                                 svc.remove_waiting_room(&code);
-                                let _ = socket.send(Message::Close(None)).await;
+                                let _ = send_ws_bounded(&mut socket, Message::Close(None), Duration::from_secs(3)).await;
                                 return;
                             }
                         }
@@ -607,18 +646,23 @@ async fn pump_paired_session(
     _held_room_permit: Arc<OwnedSemaphorePermit>,
 ) {
     let mut control_bytes_sent: usize = 0;
+    let session_ceiling = tokio::time::Instant::now() + MAX_PAIRED_SESSION_DURATION;
+    let mut idle_deadline =
+        (tokio::time::Instant::now() + PAIRED_IDLE_TIMEOUT).min(session_ceiling);
 
     loop {
         tokio::select! {
             outbound = rx_from_peer.recv() => {
                 match outbound {
                     Some(RelayFrame::Text(txt)) => {
-                        if socket.send(Message::Text(txt)).await.is_err() {
+                        idle_deadline = (tokio::time::Instant::now() + PAIRED_IDLE_TIMEOUT).min(session_ceiling);
+                        if send_ws_bounded(&mut socket, Message::Text(txt), PAIRED_SEND_TIMEOUT).await.is_err() {
                             break;
                         }
                     }
                     Some(RelayFrame::Binary(bin)) => {
-                        if socket.send(Message::Binary(bin)).await.is_err() {
+                        idle_deadline = (tokio::time::Instant::now() + PAIRED_IDLE_TIMEOUT).min(session_ceiling);
+                        if send_ws_bounded(&mut socket, Message::Binary(bin), PAIRED_SEND_TIMEOUT).await.is_err() {
                             break;
                         }
                     }
@@ -632,18 +676,20 @@ async fn pump_paired_session(
                     }
                     None => {
                         let _ = send_server_json(&mut socket, &ServerControlMessage::PeerDisconnected).await;
-                        let _ = socket.send(Message::Close(None)).await;
+                        let _ = send_ws_bounded(&mut socket, Message::Close(None), Duration::from_secs(3)).await;
                         break;
                     }
                 }
             }
-            inbound = tokio::time::timeout(PAIRED_IDLE_TIMEOUT, socket.recv()) => {
+            inbound = tokio::time::timeout_at(idle_deadline, socket.recv()) => {
                 match inbound {
                     Err(_) => {
+                        let _ = tx_to_peer.try_send(RelayFrame::Abort);
                         send_error_and_close(&mut socket, "idle_timeout", "Pairing session timed out due to inactivity").await;
                         break;
                     }
                     Ok(Some(Ok(Message::Text(txt)))) => {
+                        idle_deadline = (tokio::time::Instant::now() + PAIRED_IDLE_TIMEOUT).min(session_ceiling);
                         if txt.len() > MAX_CONTROL_TEXT_BYTES {
                             let _ = tx_to_peer.try_send(RelayFrame::Abort);
                             send_error_and_close(&mut socket, "frame_too_large", "Control message exceeds 32 KiB limit").await;
@@ -667,14 +713,18 @@ async fn pump_paired_session(
                         }
                         if env.msg_type == "abort" {
                             let _ = tx_to_peer.try_send(RelayFrame::Abort);
-                            let _ = socket.send(Message::Close(None)).await;
+                            let _ = send_ws_bounded(&mut socket, Message::Close(None), Duration::from_secs(3)).await;
                             break;
                         }
-                        if tx_to_peer.send(RelayFrame::Text(txt)).await.is_err() {
+                        if tokio::time::timeout(PAIRED_SEND_TIMEOUT, tx_to_peer.send(RelayFrame::Text(txt)))
+                            .await
+                            .map_or(true, |r| r.is_err())
+                        {
                             break;
                         }
                     }
                     Ok(Some(Ok(Message::Binary(bin)))) => {
+                        idle_deadline = (tokio::time::Instant::now() + PAIRED_IDLE_TIMEOUT).min(session_ceiling);
                         if bin.is_empty() || bin.len() > MAX_RELAY_BINARY_BYTES {
                             let _ = tx_to_peer.try_send(RelayFrame::Abort);
                             send_error_and_close(&mut socket, "frame_too_large", "Ciphertext chunk must be 1..=65536 bytes").await;
@@ -690,14 +740,17 @@ async fn pump_paired_session(
                             ).await;
                             break;
                         }
-                        // Bounded mpsc `.send().await` suspends reading from this socket when the receiver lags,
-                        // propagating natural TCP window backpressure without buffering unbounded frames in RAM.
-                        if tx_to_peer.send(RelayFrame::Binary(bin)).await.is_err() {
+                        // Bounded mpsc `.send().await` with write deadline propagates natural TCP window backpressure
+                        // while ensuring a stalled receiver cannot hold room permits open indefinitely.
+                        if tokio::time::timeout(PAIRED_SEND_TIMEOUT, tx_to_peer.send(RelayFrame::Binary(bin)))
+                            .await
+                            .map_or(true, |r| r.is_err())
+                        {
                             break;
                         }
                     }
                     Ok(Some(Ok(Message::Ping(p)))) => {
-                        if socket.send(Message::Pong(p)).await.is_err() {
+                        if send_ws_bounded(&mut socket, Message::Pong(p), SEND_FRAME_TIMEOUT).await.is_err() {
                             break;
                         }
                     }
@@ -1024,6 +1077,36 @@ max_relay_mb = 1
         assert!(
             saw_limit_err,
             "should enforce max_relay_mb ciphertext stream cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn enforces_handshake_concurrency_cap_on_unpaired_sockets() {
+        let (addr, _state) = spawn_test_server(
+            r#"
+version = 1
+[drop]
+enabled = true
+max_rooms = 1
+per_ip_requests_per_minute = 120
+"#,
+        )
+        .await;
+        let origin = format!("http://127.0.0.1:{}", addr.port());
+
+        // `handshake_sem` allows max(max_rooms * 2, 16) = 16 concurrent unpaired sockets
+        let mut held = Vec::new();
+        for _ in 0..16 {
+            held.push(
+                MiniWsClient::connect(addr, Some(&origin), None)
+                    .await
+                    .unwrap(),
+            );
+        }
+        // 17th unpaired socket is immediately rejected with 429 before upgrading
+        assert_eq!(
+            MiniWsClient::connect(addr, Some(&origin), None).await.err(),
+            Some(429)
         );
     }
 }

@@ -17,7 +17,7 @@ use crate::app::AppState;
 use crate::config::SystemConfig;
 use cgroup::{detect_cgroup_context, CgroupContext};
 use cpu::{capture_cpu_point, compute_cpu_delta, CpuSamplePoint, CpuTelemetryDto};
-use disk::{sample_disks, DiskTelemetryDto};
+use disk::{disambiguate_disk_labels, sample_disks_scoped, DiskProbeScope, DiskTelemetryDto};
 use memory::{sample_memory, MemoryTelemetryDto};
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,13 +40,17 @@ struct SystemErrorBody {
 
 /// Hardware telemetry sampler:
 /// - Never blocks server startup on `statvfs` disk probes (so stale NFS/SMB mounts cannot stall `/healthz` or TCP bind);
-/// - Isolates microsecond-scale `/proc` CPU/memory sampling from potentially blocking storage probes at runtime.
+/// - Isolates `/proc` CPU/memory sampling, local block storage, and network mounts (`NFS/SMB/9p`) onto independent channels
+///   so an unresponsive network share never freezes local NVMe/SD/UFS disk capacity updates.
 pub struct SystemService {
     cfg: SystemConfig,
     cgroup_ctx: CgroupContext,
     snapshot: RwLock<SystemTelemetryResponse>,
     prev_cpu: RwLock<Option<CpuSamplePoint>>,
-    disk_probe_running: AtomicBool,
+    local_disks: RwLock<Vec<DiskTelemetryDto>>,
+    net_disks: RwLock<Vec<DiskTelemetryDto>>,
+    local_disk_probe_running: AtomicBool,
+    net_disk_probe_running: AtomicBool,
 }
 
 impl SystemService {
@@ -74,7 +78,10 @@ impl SystemService {
                 disks: Vec::new(),
             }),
             prev_cpu: RwLock::new(initial_cpu_pt),
-            disk_probe_running: AtomicBool::new(false),
+            local_disks: RwLock::new(Vec::new()),
+            net_disks: RwLock::new(Vec::new()),
+            local_disk_probe_running: AtomicBool::new(false),
+            net_disk_probe_running: AtomicBool::new(false),
         }
     }
 
@@ -124,14 +131,36 @@ impl SystemService {
         snap.memory = mem_dto;
     }
 
-    /// Refreshes disk metrics independently; skips the tick if a previous probe is still blocked in the kernel
-    /// on an unresponsive network mount so the blocking thread pool cannot pile up.
-    pub fn sample_disks_isolated(&self) {
+    fn publish_combined_disks(&self) {
+        let local = self
+            .local_disks
+            .read()
+            .expect("local_disks rwlock poisoned")
+            .clone();
+        let net = self
+            .net_disks
+            .read()
+            .expect("net_disks rwlock poisoned")
+            .clone();
+        let mut combined = Vec::with_capacity(local.len() + net.len());
+        combined.extend(local);
+        combined.extend(net);
+        disambiguate_disk_labels(&mut combined);
+
+        let mut snap = self
+            .snapshot
+            .write()
+            .expect("system snapshot rwlock poisoned");
+        snap.disks = combined;
+    }
+
+    /// Refreshes local block disks without touching any NFS/SMB mount points.
+    pub fn sample_local_disks_isolated(&self) {
         if !self.storage_enabled() {
             return;
         }
         if self
-            .disk_probe_running
+            .local_disk_probe_running
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
@@ -144,20 +173,48 @@ impl SystemService {
                 self.0.store(false, Ordering::Release);
             }
         }
-        let _guard = ResetFlag(&self.disk_probe_running);
+        let _guard = ResetFlag(&self.local_disk_probe_running);
 
-        let disks_dto = sample_disks(&self.cfg.disks);
-        let mut snap = self
-            .snapshot
+        let disks_dto = sample_disks_scoped(&self.cfg.disks, DiskProbeScope::LocalOnly);
+        *self
+            .local_disks
             .write()
-            .expect("system snapshot rwlock poisoned");
-        snap.disks = disks_dto;
+            .expect("local_disks rwlock poisoned") = disks_dto;
+        self.publish_combined_disks();
+    }
+
+    /// Refreshes remote/network mounts (`NFS/CIFS/SMB/9p`) on an isolated single-concurrency slot
+    /// so a hung network share neither piles up worker threads nor freezes local disk telemetry.
+    pub fn sample_network_disks_isolated(&self) {
+        if !self.storage_enabled() {
+            return;
+        }
+        if self
+            .net_disk_probe_running
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        struct ResetFlag<'a>(&'a AtomicBool);
+        impl Drop for ResetFlag<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Ordering::Release);
+            }
+        }
+        let _guard = ResetFlag(&self.net_disk_probe_running);
+
+        let disks_dto = sample_disks_scoped(&self.cfg.disks, DiskProbeScope::NetworkOnly);
+        *self.net_disks.write().expect("net_disks rwlock poisoned") = disks_dto;
+        self.publish_combined_disks();
     }
 
     /// Triggers a synchronous full sample snapshot for integration tests.
     pub fn sample_once(&self) {
         self.sample_cpu_and_memory();
-        self.sample_disks_isolated();
+        self.sample_local_disks_isolated();
+        self.sample_network_disks_isolated();
     }
 
     pub fn current_snapshot(&self) -> SystemTelemetryResponse {
@@ -176,21 +233,37 @@ pub fn spawn_system_sampler(service: Arc<SystemService>) {
     }
     let refresh = Duration::from_secs(service.refresh_seconds().max(1));
 
-    // Channel 1: isolated async disk probing (immediate initial probe, then every max(refresh, 2s))
+    // Channel 1a: isolated local disk probing (every max(refresh, 2s))
     if service.storage_enabled() {
-        let disk_svc = Arc::clone(&service);
-        let disk_interval = refresh.max(Duration::from_secs(2));
+        let local_svc = Arc::clone(&service);
+        let local_interval = refresh.max(Duration::from_secs(2));
         tokio::spawn(async move {
-            let init_svc = Arc::clone(&disk_svc);
-            let _ = tokio::task::spawn_blocking(move || init_svc.sample_disks_isolated()).await;
+            let init_svc = Arc::clone(&local_svc);
+            let _ =
+                tokio::task::spawn_blocking(move || init_svc.sample_local_disks_isolated()).await;
 
-            let mut ticker = tokio::time::interval(disk_interval);
+            let mut ticker = tokio::time::interval(local_interval);
             ticker.tick().await;
             loop {
                 ticker.tick().await;
-                let svc = Arc::clone(&disk_svc);
-                // Fire without awaiting stalled probes; `disk_probe_running` guarantees at most one in-flight worker
-                tokio::task::spawn_blocking(move || svc.sample_disks_isolated());
+                let svc = Arc::clone(&local_svc);
+                tokio::task::spawn_blocking(move || svc.sample_local_disks_isolated());
+            }
+        });
+
+        // Channel 1b: isolated network mount probing (every max(refresh, 5s); hung NFS never stalls Channel 1a)
+        let net_svc = Arc::clone(&service);
+        let net_interval = refresh.max(Duration::from_secs(5));
+        tokio::spawn(async move {
+            let init_svc = Arc::clone(&net_svc);
+            tokio::task::spawn_blocking(move || init_svc.sample_network_disks_isolated());
+
+            let mut ticker = tokio::time::interval(net_interval);
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                let svc = Arc::clone(&net_svc);
+                tokio::task::spawn_blocking(move || svc.sample_network_disks_isolated());
             }
         });
     }

@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{Query, Request, State};
@@ -28,6 +28,7 @@ use crate::security::extract_client_ip;
 const RANDOM_BUF_LEN: usize = 1024 * 1024; // 1 MiB incompressible random buffer
 const UPLOAD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_STREAM_TIMEOUT: Duration = Duration::from_secs(45);
+const DOWNLOAD_CHUNK_SEND_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_TRACKED_SPEED_IPS: usize = 16_384;
 const MAX_TRACKED_IP_SEMAPHORES: usize = 4_096;
 
@@ -203,15 +204,19 @@ impl SpeedtestService {
             granted,
             Some(QuotaReservation {
                 svc: Arc::clone(self),
+                day: today,
                 unconsumed: granted,
             }),
         ))
     }
 
-    fn refund_quota_bytes(&self, bytes: u64) {
+    fn refund_quota_bytes(&self, reserved_day: Date, bytes: u64) {
         let today = current_local_date();
+        if reserved_day != today {
+            return;
+        }
         if let Ok(mut guard) = self.daily_quota.lock() {
-            if guard.day == today {
+            if guard.day == reserved_day {
                 guard.used_bytes = guard.used_bytes.saturating_sub(bytes);
             }
         }
@@ -220,6 +225,7 @@ impl SpeedtestService {
 
 pub struct QuotaReservation {
     svc: Arc<SpeedtestService>,
+    day: Date,
     unconsumed: u64,
 }
 
@@ -232,7 +238,7 @@ impl QuotaReservation {
 impl Drop for QuotaReservation {
     fn drop(&mut self) {
         if self.unconsumed > 0 {
-            self.svc.refund_quota_bytes(self.unconsumed);
+            self.svc.refund_quota_bytes(self.day, self.unconsumed);
         }
     }
 }
@@ -374,31 +380,37 @@ pub async fn get_down(
     };
 
     let chunk_template = svc.random_chunk.clone();
-    let started_at = Instant::now();
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Bytes, Infallible>>(2);
 
-    let stream = futures_util::stream::unfold(
-        (
-            target_bytes,
-            chunk_template,
-            quota_reservation,
-            permits,
-            started_at,
-        ),
-        |(remaining, buf, mut reservation, held_permits, t0)| async move {
-            if remaining == 0 || t0.elapsed() >= DOWNLOAD_STREAM_TIMEOUT {
-                return None;
+    // Active producer task enforces wall-clock and per-chunk write deadlines independently of downstream polling,
+    // guaranteeing that concurrency permits and quota reservations are released even if a client stalls TCP reads.
+    tokio::spawn(async move {
+        let _held_permits = permits;
+        let mut reservation = quota_reservation;
+        let mut remaining = target_bytes;
+        let deadline = tokio::time::Instant::now() + DOWNLOAD_STREAM_TIMEOUT;
+
+        let _ = tokio::time::timeout_at(deadline, async {
+            while remaining > 0 {
+                let step = remaining.min(chunk_template.len() as u64) as usize;
+                let slice = chunk_template.slice(0..step);
+                let send_res =
+                    tokio::time::timeout(DOWNLOAD_CHUNK_SEND_TIMEOUT, tx.send(Ok(slice))).await;
+                match send_res {
+                    Ok(Ok(())) => {
+                        if let Some(resv) = reservation.as_mut() {
+                            resv.consume(step as u64);
+                        }
+                        remaining -= step as u64;
+                    }
+                    _ => break,
+                }
             }
-            let step = remaining.min(buf.len() as u64) as usize;
-            if let Some(resv) = reservation.as_mut() {
-                resv.consume(step as u64);
-            }
-            let slice = buf.slice(0..step);
-            Some((
-                Ok::<Bytes, Infallible>(slice),
-                (remaining - step as u64, buf, reservation, held_permits, t0),
-            ))
-        },
-    );
+        })
+        .await;
+    });
+
+    let stream = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx));
 
     let mut res = Response::new(Body::from_stream(stream));
     *res.status_mut() = StatusCode::OK;
@@ -580,5 +592,34 @@ mod tests {
             .reserve_download_quota(16 * 1024 * 1024)
             .expect("6 MiB should have been refunded");
         assert_eq!(granted_after_refund, 6 * 1024 * 1024);
+    }
+
+    #[test]
+    fn cross_midnight_abort_never_refunds_new_day_quota() {
+        let cfg = SpeedtestConfig {
+            enabled: true,
+            max_upload_mb: 16,
+            max_download_mb: 64,
+            per_ip_concurrency: 4,
+            global_concurrency: 8,
+            per_ip_requests_per_minute: 60,
+            daily_quota_gb: 1,
+        };
+        let svc = Arc::new(SpeedtestService::new(&cfg));
+        let yesterday = current_local_date().yesterday().unwrap();
+
+        let resv_from_yesterday = QuotaReservation {
+            svc: Arc::clone(&svc),
+            day: yesterday,
+            unconsumed: 32 * 1024 * 1024,
+        };
+
+        // Today already recorded 50 MiB of usage
+        let today_used = 50 * 1024 * 1024_u64;
+        assert!(svc.record_quota_bytes(today_used));
+        drop(resv_from_yesterday);
+
+        let guard = svc.daily_quota.lock().unwrap();
+        assert_eq!(guard.used_bytes, today_used);
     }
 }

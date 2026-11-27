@@ -36,8 +36,48 @@ const MAX_CONCURRENT_ARGON2_VERIFICATIONS: usize = 4;
 const ARGON2_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Maximum per-IP rate-limiter buckets retained in memory against spoofed/rotating IPv6 sources.
 const MAX_TRACKED_LOGIN_IPS: usize = 16_384;
-/// Maximum revoked session nonces held in memory until natural expiration (zero disk writes).
-const MAX_REVOKED_SESSIONS: usize = 4_096;
+/// Maximum concurrent active single-user sessions retained in memory (zero disk writes; logged-out sessions are deleted permanently).
+const MAX_ACTIVE_SESSIONS: usize = 64;
+
+#[cfg(unix)]
+struct NoEchoTerminalGuard {
+    orig: Option<rustix::termios::Termios>,
+}
+
+#[cfg(unix)]
+impl NoEchoTerminalGuard {
+    fn acquire_stdin() -> Self {
+        use rustix::termios::{tcgetattr, tcsetattr, LocalModes, OptionalActions};
+        let stdin = io::stdin();
+        let Ok(orig) = tcgetattr(&stdin) else {
+            return Self { orig: None };
+        };
+        let mut next = orig.clone();
+        next.local_modes.remove(LocalModes::ECHO);
+        if tcsetattr(&stdin, OptionalActions::Flush, &next).is_ok() {
+            Self { orig: Some(orig) }
+        } else {
+            Self { orig: None }
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.orig.is_some()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for NoEchoTerminalGuard {
+    fn drop(&mut self) {
+        if let Some(ref orig) = self.orig {
+            let _ = rustix::termios::tcsetattr(
+                io::stdin(),
+                rustix::termios::OptionalActions::Now,
+                orig,
+            );
+        }
+    }
+}
 
 /// Hashes a plaintext password using Argon2id and a 128-bit OS CSPRNG salt.
 pub fn hash_password_str(password: &str) -> Result<String, String> {
@@ -53,19 +93,33 @@ pub fn hash_password_str(password: &str) -> Result<String, String> {
 }
 
 /// `pikbay hash-password` subcommand: reads a single password line from stdin and prints an Argon2id PHC hash
-/// (never accepts plaintext on argv so credentials are not exposed in `ps`).
+/// (never accepts plaintext on argv so credentials are not exposed in `ps`, and disables TTY echo on Unix).
 pub fn run_hash_password_cli() -> Result<(), String> {
-    if std::io::IsTerminal::is_terminal(&io::stdin()) {
+    let is_tty = std::io::IsTerminal::is_terminal(&io::stdin());
+    if is_tty {
         eprint!(
             "Enter password and press Enter ({MIN_PASSWORD_CHARS} chars min, {MAX_PASSWORD_BYTES} bytes max): "
         );
         let _ = io::stderr().flush();
     }
+
+    #[cfg(unix)]
+    let echo_guard = if is_tty {
+        Some(NoEchoTerminalGuard::acquire_stdin())
+    } else {
+        None
+    };
+
     let mut line = String::new();
-    io::stdin()
-        .lock()
-        .read_line(&mut line)
-        .map_err(|e| format!("failed to read from stdin: {e}"))?;
+    let read_res = io::stdin().lock().read_line(&mut line);
+
+    #[cfg(unix)]
+    if echo_guard.as_ref().is_some_and(|g| g.is_active()) {
+        drop(echo_guard);
+        eprintln!();
+    }
+
+    read_res.map_err(|e| format!("failed to read from stdin: {e}"))?;
     let trimmed = line.trim_end_matches(['\r', '\n']);
     if trimmed.chars().count() < MIN_PASSWORD_CHARS || trimmed.len() > MAX_PASSWORD_BYTES {
         return Err(format!(
@@ -77,7 +131,13 @@ pub fn run_hash_password_cli() -> Result<(), String> {
     Ok(())
 }
 
-/// In-memory single-user authentication service (`--read-only` compatible, zero disk writes, immediate logout revocation).
+struct ActiveSessionTable {
+    next_seq: u64,
+    /// Maps `nonce_b64 -> (issued_seq, exp_unix_secs)`.
+    entries: HashMap<String, (u64, u64)>,
+}
+
+/// In-memory single-user authentication service (`--read-only` compatible, zero disk writes, bounded active-session allowlist).
 pub struct AuthService {
     enabled: bool,
     username: String,
@@ -88,7 +148,7 @@ pub struct AuthService {
     ttl_secs: u64,
     login_limiter: DefaultKeyedRateLimiter<IpAddr>,
     argon2_sem: Arc<Semaphore>,
-    revoked_nonces: Mutex<HashMap<String, u64>>,
+    active_sessions: Mutex<ActiveSessionTable>,
 }
 
 impl AuthService {
@@ -116,7 +176,10 @@ impl AuthService {
             ttl_secs: cfg.session_ttl_hours.saturating_mul(3600),
             login_limiter: RateLimiter::keyed(quota),
             argon2_sem: Arc::new(Semaphore::new(MAX_CONCURRENT_ARGON2_VERIFICATIONS)),
-            revoked_nonces: Mutex::new(HashMap::new()),
+            active_sessions: Mutex::new(ActiveSessionTable {
+                next_seq: 0,
+                entries: HashMap::new(),
+            }),
         }
     }
 
@@ -128,18 +191,18 @@ impl AuthService {
         &self.username
     }
 
-    /// Evicts expired IP rate-limiter buckets and expired revoked session nonces.
+    /// Evicts expired IP rate-limiter buckets and expired active session nonces.
     pub fn retain_recent_limiters(&self) {
         self.login_limiter.retain_recent();
         self.login_limiter.shrink_to_fit();
 
         let now = current_unix_secs();
         let mut guard = self
-            .revoked_nonces
+            .active_sessions
             .lock()
-            .expect("revoked_nonces mutex poisoned");
-        guard.retain(|_, &mut exp| exp > now);
-        guard.shrink_to_fit();
+            .expect("active_sessions mutex poisoned");
+        guard.entries.retain(|_, &mut (_, exp)| exp > now);
+        guard.entries.shrink_to_fit();
     }
 
     pub fn check_login_rate_limit(&self, ip: IpAddr) -> bool {
@@ -179,21 +242,14 @@ impl AuthService {
     }
 
     pub fn revoke_session_token(&self, token: &str) {
-        let Some((nonce_b64, exp)) = self.verify_token_signature_and_exp(token) else {
+        let Some((nonce_b64, _exp)) = self.verify_token_signature_and_exp(token) else {
             return;
         };
-        let now = current_unix_secs();
         let mut guard = self
-            .revoked_nonces
+            .active_sessions
             .lock()
-            .expect("revoked_nonces mutex poisoned");
-        guard.retain(|_, &mut e| e > now);
-        if guard.len() >= MAX_REVOKED_SESSIONS && !guard.contains_key(&nonce_b64) {
-            if let Some(oldest_key) = guard.iter().min_by_key(|(_, &e)| e).map(|(k, _)| k.clone()) {
-                guard.remove(&oldest_key);
-            }
-        }
-        guard.insert(nonce_b64, exp);
+            .expect("active_sessions mutex poisoned");
+        guard.entries.remove(&nonce_b64);
     }
 
     /// Performs constant-time username comparison and Argon2id password verification on the blocking pool.
@@ -246,6 +302,28 @@ impl AuthService {
         let nonce_b64 = Base64UrlUnpadded::encode_string(&nonce);
         let payload = format!("{exp}.{nonce_b64}");
         let sig = self.sign_payload(&payload);
+
+        {
+            let mut guard = self
+                .active_sessions
+                .lock()
+                .expect("active_sessions mutex poisoned");
+            guard.entries.retain(|_, &mut (_, e)| e > now);
+            if guard.entries.len() >= MAX_ACTIVE_SESSIONS {
+                if let Some(oldest_key) = guard
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, &(seq, _))| seq)
+                    .map(|(k, _)| k.clone())
+                {
+                    guard.entries.remove(&oldest_key);
+                }
+            }
+            guard.next_seq = guard.next_seq.saturating_add(1);
+            let seq = guard.next_seq;
+            guard.entries.insert(nonce_b64, (seq, exp));
+        }
+
         format!("{payload}.{sig}")
     }
 
@@ -273,11 +351,15 @@ impl AuthService {
         let Some((nonce_b64, _exp)) = self.verify_token_signature_and_exp(token) else {
             return false;
         };
+        let now = current_unix_secs();
         let guard = self
-            .revoked_nonces
+            .active_sessions
             .lock()
-            .expect("revoked_nonces mutex poisoned");
-        !guard.contains_key(&nonce_b64)
+            .expect("active_sessions mutex poisoned");
+        guard
+            .entries
+            .get(&nonce_b64)
+            .is_some_and(|&(_, exp)| exp > now)
     }
 
     fn sign_payload(&self, payload: &str) -> String {
@@ -559,8 +641,15 @@ mod tests {
         assert!(svc.verify_session_token(&token));
         assert!(!svc.verify_session_token(&format!("{token}tampered")));
 
-        // Revoked tokens must become invalid immediately
+        // Revoked tokens must become invalid immediately and never resurrect even after > MAX_ACTIVE_SESSIONS new logins
         svc.revoke_session_token(&token);
         assert!(!svc.verify_session_token(&token));
+
+        let mut latest_tokens = Vec::new();
+        for _ in 0..(MAX_ACTIVE_SESSIONS + 16) {
+            latest_tokens.push(svc.issue_session_token());
+        }
+        assert!(!svc.verify_session_token(&token));
+        assert!(svc.verify_session_token(latest_tokens.last().unwrap()));
     }
 }

@@ -285,11 +285,11 @@ pub fn is_same_origin_api_request(
 
     if let Some(origin_raw) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
         let trimmed = origin_raw.trim();
-        let (scheme_default_port, orig_authority) =
+        let (orig_scheme, scheme_default_port, orig_authority) =
             if let Some(rest) = trimmed.strip_prefix("https://") {
-                ("443", rest)
+                ("https", "443", rest)
             } else if let Some(rest) = trimmed.strip_prefix("http://") {
-                ("80", rest)
+                ("http", "80", rest)
             } else {
                 // Reject `Origin: null` and non-HTTP(S) schemes
                 return false;
@@ -297,6 +297,26 @@ pub fn is_same_origin_api_request(
 
         if orig_authority.contains(['/', '?', '#', '@']) {
             return false;
+        }
+
+        // When behind a trusted reverse proxy advertising `X-Forwarded-Proto`, enforce exact scheme matching
+        // (blocking `http://` MITM downgrade CSRF against `https://` deployments while preserving compatibility
+        // when untrusted bridge proxies do not forward scheme headers).
+        let forwarded_proto = if is_trusted_proxy(peer_ip, trusted_proxies) {
+            headers
+                .get("x-forwarded-proto")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.split(',').next())
+                .map(str::trim)
+                .filter(|s| s.eq_ignore_ascii_case("https") || s.eq_ignore_ascii_case("http"))
+        } else {
+            None
+        };
+
+        if let Some(proto) = forwarded_proto {
+            if !proto.eq_ignore_ascii_case(orig_scheme) {
+                return false;
+            }
         }
 
         let Some((orig_host, orig_port)) = split_authority_host_port(orig_authority) else {
@@ -315,12 +335,14 @@ pub fn is_same_origin_api_request(
             return false;
         }
 
+        let target_default_port = match forwarded_proto {
+            Some(p) if p.eq_ignore_ascii_case("https") => "443",
+            Some(p) if p.eq_ignore_ascii_case("http") => "80",
+            _ => scheme_default_port,
+        };
         let orig_eff_port = orig_port.as_deref().unwrap_or(scheme_default_port);
-        if let Some(cp) = cand_port.as_deref() {
-            if orig_eff_port != cp {
-                return false;
-            }
-        } else if orig_port.is_some() && orig_eff_port != "80" && orig_eff_port != "443" {
+        let cand_eff_port = cand_port.as_deref().unwrap_or(target_default_port);
+        if orig_eff_port != cand_eff_port {
             return false;
         }
     }
@@ -503,5 +525,47 @@ mod tests {
         let peer: IpAddr = "127.0.0.1".parse().unwrap();
         let expected: IpAddr = "100.64.1.9".parse().unwrap();
         assert_eq!(extract_client_ip(peer, &headers, &trusted), expected);
+    }
+
+    #[test]
+    fn same_origin_guard_enforces_scheme_and_normalized_ports() {
+        let trusted = vec![IpNet::parse("127.0.0.1/32").unwrap()];
+        let peer: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // 1. Rejects http -> https scheme downgrade when trusted proxy reports X-Forwarded-Proto: https
+        let mut downgrade = HeaderMap::new();
+        downgrade.insert(header::HOST, HeaderValue::from_static("pikbay.example.com"));
+        downgrade.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        downgrade.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://pikbay.example.com"),
+        );
+        assert!(!is_same_origin_api_request(
+            peer, &downgrade, None, &trusted
+        ));
+
+        // 2. Rejects cross-port `http://pikbay.example.com:443` against portless `Host: pikbay.example.com`
+        let mut cross_port = HeaderMap::new();
+        cross_port.insert(header::HOST, HeaderValue::from_static("pikbay.example.com"));
+        cross_port.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("http://pikbay.example.com:443"),
+        );
+        assert!(!is_same_origin_api_request(
+            peer,
+            &cross_port,
+            None,
+            &trusted
+        ));
+
+        // 3. Accepts matching https origin with implicit 443 or explicit :443
+        let mut ok_https = HeaderMap::new();
+        ok_https.insert(header::HOST, HeaderValue::from_static("pikbay.example.com"));
+        ok_https.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        ok_https.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://pikbay.example.com:443"),
+        );
+        assert!(is_same_origin_api_request(peer, &ok_https, None, &trusted));
     }
 }

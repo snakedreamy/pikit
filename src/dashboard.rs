@@ -124,9 +124,17 @@ pub async fn get_icon(
     res
 }
 
-/// Opens an icon file with `O_NOFOLLOW` (on Unix) and verifies regular-file type and size cap on the open descriptor.
+/// Opens an icon file with `O_NOFOLLOW` (on Unix; `symlink_metadata` check on non-Unix) and verifies regular-file type and size cap.
 fn read_icon_no_follow(path: &std::path::Path) -> Option<Vec<u8>> {
     use std::io::Read;
+
+    #[cfg(not(unix))]
+    {
+        let sym_meta = std::fs::symlink_metadata(path).ok()?;
+        if sym_meta.file_type().is_symlink() || !sym_meta.file_type().is_file() {
+            return None;
+        }
+    }
 
     let mut opts = std::fs::OpenOptions::new();
     opts.read(true);
