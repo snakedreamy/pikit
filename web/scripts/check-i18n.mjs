@@ -80,6 +80,13 @@ for (const dir of localeDirs) {
     for (const [k, val] of flat.entries()) {
       if (typeof val !== 'string' || val.trim() === '') {
         errors.push(`${relDir}/${locale}.json: key "${k}" must be a non-empty string`);
+        continue;
+      }
+      const singleBrace = val.match(/(?<!\{)\{[a-zA-Z_][a-zA-Z0-9_]*\}(?!\})/);
+      if (singleBrace) {
+        errors.push(
+          `${relDir}/${locale}.json: key "${k}" uses single-brace "${singleBrace[0]}" instead of i18next "{{...}}" interpolation`
+        );
       }
     }
     maps.set(locale, flat);
@@ -87,12 +94,27 @@ for (const dir of localeDirs) {
 
   if (maps.size === REQUIRED_LOCALES.length) {
     const baseLocale = REQUIRED_LOCALES[0];
-    const baseKeys = new Set(maps.get(baseLocale).keys());
+    const baseMap = maps.get(baseLocale);
+    const baseKeys = new Set(baseMap.keys());
+    const extractVars = (s) =>
+      typeof s === 'string'
+        ? [...new Set([...s.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map((m) => m[1]))].sort()
+        : [];
+
     for (const other of REQUIRED_LOCALES.slice(1)) {
-      const otherKeys = new Set(maps.get(other).keys());
+      const otherMap = maps.get(other);
+      const otherKeys = new Set(otherMap.keys());
       for (const k of baseKeys) {
         if (!otherKeys.has(k)) {
           errors.push(`${relDir}: "${k}" exists in ${baseLocale} but is missing in ${other}`);
+          continue;
+        }
+        const baseVars = extractVars(baseMap.get(k));
+        const otherVars = extractVars(otherMap.get(k));
+        if (baseVars.join(',') !== otherVars.join(',')) {
+          errors.push(
+            `${relDir}: placeholder mismatch for "${k}" (${baseLocale}: [${baseVars.join(', ')}] vs ${other}: [${otherVars.join(', ')}])`
+          );
         }
       }
       for (const k of otherKeys) {

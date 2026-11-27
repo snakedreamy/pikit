@@ -50,7 +50,7 @@
     </td>
     <td align="center" width="33%">
       <img alt="pikbay Local IT Toolbox" src="docs/images/preview-tools-dark.png" width="310"><br/>
-      <sub><strong>Local IT Toolbox (<code>/tools</code>)</strong> — 24 lazy-loaded, 100% in-browser utilities with zero network calls</sub>
+      <sub><strong>Local IT Toolbox (<code>/tools</code>)</strong> — 25 lazy-loaded, 100% in-browser utilities with zero network calls</sub>
     </td>
   </tr>
 </table>
@@ -58,14 +58,14 @@
 
 <!-- markdownlint-enable first-line-h1 no-inline-html -->
 
-**pikbay** consolidates a homelab **service startpage**, an end-to-end **network speedtest**, a **24-tool local-only developer & sysadmin toolbox**, and a **zero-storage encrypted peer-to-peer drop** into one self-contained Rust executable (`#![forbid(unsafe_code)]`) with all frontend assets embedded at compile time. It runs without a database, makes zero external network requests, and never writes state to disk—making it equally suited for Raspberry Pi / ARM SBCs, NAS boxes, bare-metal Linux hosts, and `--read-only` `FROM scratch` containers.
+**pikbay** consolidates a homelab **service startpage**, an end-to-end **network speedtest**, a **25-tool local-only developer & sysadmin toolbox**, and a **zero-storage encrypted peer-to-peer drop** into one self-contained Rust executable (`#![forbid(unsafe_code)]`) with all frontend assets embedded at compile time. It runs without a database, makes zero external network requests, and never writes state to disk—making it equally suited for Raspberry Pi / ARM SBCs, NAS boxes, bare-metal Linux hosts, and `--read-only` `FROM scratch` containers.
 
 - [Why pikbay?](#why-pikbay)
 - [Features](#features)
   - [Startpage & Hardware Status Strip (`/`)](#startpage--hardware-status-strip-)
   - [Streaming Network Speedtest (`/speedtest`)](#streaming-network-speedtest-speedtest)
   - [Peer-to-Peer Encrypted Drop (`/drop`)](#peer-to-peer-encrypted-drop-drop)
-  - [100% In-Browser IT Toolbox (`/tools`, 24 Tools)](#100-in-browser-it-toolbox-tools-24-tools)
+  - [100% In-Browser IT Toolbox (`/tools`, 25 Tools)](#100-in-browser-it-toolbox-tools-25-tools)
 - [Getting Started](#getting-started)
   - [Option 1: Prebuilt Binary + `systemd` (Recommended for Bare Metal / SBCs)](#option-1-prebuilt-binary--systemd-recommended-for-bare-metal--sbcs)
   - [Option 2: Multi-Arch Container (`ghcr.io` / Docker / Podman)](#option-2-multi-arch-container-ghcrio--docker--podman)
@@ -115,18 +115,18 @@ When managing a personal server, homelab, or Tailscale tailnet, bookmarks, inter
 - **Ephemeral X25519 + PIN-Bound 256-Bit AEAD**: Both browsers generate ephemeral X25519 key pairs and derive session keys via `HKDF-SHA256` bound to both random salts and the 6-digit PIN. Metadata (filename, MIME, byte length) is encrypted and sent **only after** mutual Key Confirmation MACs succeed; payloads stream in `64 KiB` **ChaCha20-Poly1305** chunks with monotonic sequence numbers and an authenticated EOF frame (works identically on HTTPS and plain-HTTP LAN IPs).
 - **WebRTC Direct + Automatic Zero-Knowledge Relay Fallback**: Negotiates a direct LAN `RTCDataChannel` (`iceServers: []`, zero external STUN/TURN calls) so bytes bypass the server completely. When Wi-Fi AP isolation, container NAT, or cross-subnet routing blocks P2P after 3 seconds, `/drop` seamlessly streams the exact same AEAD ciphertext chunks through `/api/drop/ws` with bounded backpressure (`max_relay_mb = 256`) and zero server storage.
 
-### 100% In-Browser IT Toolbox (`/tools`, 24 Tools)
+### 100% In-Browser IT Toolbox (`/tools`, 25 Tools)
 
-Includes **24 lazy-chunked developer & sysadmin utilities** filling a symmetric 4×6 grid (architected for 100+ tools via auto-discovered `catalog/<tool-id>/` plugins), with pure-TypeScript fallbacks so digests, TOTP, and AEAD encryption work even on plain-HTTP private LAN IPs:
+Includes **25 lazy-chunked developer & sysadmin utilities** (architected for 100+ tools via auto-discovered `catalog/<tool-id>/` plugins), with pure-TypeScript fallbacks so digests, TOTP, and AEAD encryption work even on plain-HTTP private LAN IPs:
 
 | Category | Built-in Tools |
 |---|---|
 | **Encoding & Formats** | `Base64 Codec` (Standard / URL-Safe + binary file import/export), `URL Codec`, `JSON Formatter & Validator` (lossless 64-bit integers + exact line/column error locator), `YAML · JSON · TOML Converter` (three-way config converter & line/col validator), `Timestamp Converter` (auto s/ms, local DST & ISO 8601), `Radix Converter` (`BigInt` base 2–36), `Color Space Converter` (`HEX / RGB / HSL / OKLCH`) |
 | **Crypto & Tokens** | `Hash Digest` (`SHA-1 / SHA-256 / SHA-384 / SHA-512` & `MD5`), `HMAC Generator`, `Bcrypt Hash & Verifier` (Web Worker cost-adjustable `$2b$` + `.htpasswd` & Caddy `basic_auth`), `Offline Text Encryption` (`PBKDF2-SHA256` + `AES-256-GCM` `PKB1` armor), `UUID v4 / v7 Generator`, `Password & Token Generator` (rejection-sampled CSPRNG + Shannon entropy), `JWT Offline Inspector`, `TOTP Generator` (RFC 6238 Base32 & `otpauth://` with Previous / Current / Next windows) |
-| **Text, Diff & Web** | `Text & File Diff` (dual file drop, NUL-byte binary SHA-256 check, Split/Unified views, collapsible context & trailing-space toggle), `Regex Tester` (capture table + Web Worker 800ms ReDoS timeout), `Text Case & Counter` (Unicode code points, UTF-8 bytes & 9 naming styles), `URL Parser & Builder` (interactive Query parameter table & live URL reconstruction) |
+| **Text, Diff & Web** | `Text & File Diff` (dual file drop, NUL-byte binary SHA-256 check, Split/Unified views, collapsible context & trailing-space toggle), `Regex Tester` (capture table + Web Worker 800ms ReDoS timeout), `Text Stats & Case Converter` (graphemes, code points, UTF-8/UTF-16 sizes, CJK & words, `LF/CRLF` detection, reading time, token frequency & 9 naming styles), `URL Parser & Builder` (interactive Query parameter table & live URL reconstruction), `Device & Browser Inspector` (physical pixels, live `Hz` refresh rate, Client Hints, WebGL/WebGPU renderer, 1080p60 hardware codec matrix & Markdown/JSON report) |
 | **Network & Ops** | `IPv4 / IPv6 Subnet Calculator` (`BigInt` CIDR math, RFC 3021 `/31` & RFC 5952 compression), `Chmod Calculator` (POSIX `rwx` + `SUID / SGID / Sticky` matrix ↔ octal/symbolic/CLI), `Docker / Quadlet Converter` (`docker/podman run` → `compose.yaml` & Podman `.container` Quadlet), `Cron Parser` (5/6-field Vixie Cron + next 8 local runs), `QR Code Generator` (`SVG` & `PNG` export) |
 
-Press `/` or `⌘K` (`Ctrl+K`) anywhere to open the global command palette and search bookmarks, hosts, workspaces, and all 24 tools across **English** and **Simplified Chinese (`简体中文`)**.
+Press `/` or `⌘K` (`Ctrl+K`) anywhere to open the global command palette and search bookmarks, hosts, workspaces, and all 25 tools across **English** and **Simplified Chinese (`简体中文`)**.
 
 ---
 

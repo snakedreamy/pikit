@@ -132,3 +132,29 @@ export function nextAdaptiveChunkBytes(
   }
   return Math.min(maxBytes, Math.max(minBytes, currentBytes));
 }
+
+const TAIL_ALIGN_BYTES = 16 * 1024;
+
+/**
+ * Scales down or skips final upload chunks near the phase deadline so in-flight `POST /api/speed/up`
+ * requests finish naturally with `200 OK` instead of triggering `H3_REQUEST_CANCELLED` in reverse proxies.
+ * Returns `0` when no new upload request should be launched.
+ */
+export function computeTailUploadChunkBytes(
+  desiredBytes: number,
+  lastDurationMs: number,
+  remainingMs: number,
+  hasConfirmedBytes: boolean,
+  minBytes = 64 * 1024
+): number {
+  if (remainingMs <= 0) return 0;
+  if (hasConfirmedBytes && remainingMs <= 120) return 0;
+
+  if (lastDurationMs > 0 && remainingMs < 1500) {
+    const scaled = Math.floor(desiredBytes * (remainingMs / lastDurationMs) * 0.85);
+    const aligned = Math.floor(scaled / TAIL_ALIGN_BYTES) * TAIL_ALIGN_BYTES;
+    return Math.min(desiredBytes, Math.max(minBytes, aligned));
+  }
+
+  return desiredBytes;
+}

@@ -5,6 +5,6 @@ export const toolMeta: ToolMeta = {
   category: 'text',
   order: 140,
   icon: 'case-sensitive',
-  badge: 'Case',
+  badge: 'Stats · Case',
   load: () => import('./Tool.svelte'),
 };

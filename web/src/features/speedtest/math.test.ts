@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computePingAndJitter,
   computeSustainedThroughputMbps,
+  computeTailUploadChunkBytes,
   computeTrimmedMeanMbps,
   nextAdaptiveChunkBytes,
   type ByteCheckpoint,
@@ -41,5 +42,20 @@ describe('speedtest math', () => {
     expect(nextAdaptiveChunkBytes(128 * 1024, 50, 64 * mib)).toBe(512 * 1024);
     expect(nextAdaptiveChunkBytes(mib, 250, 64 * mib)).toBe(2 * mib);
     expect(nextAdaptiveChunkBytes(4 * mib, 2400, 64 * mib)).toBe(2 * mib);
+  });
+
+  it('tapers upload tail chunks near phase deadline to avoid cancelling in-flight HTTP/3 bodies', () => {
+    const mib = 1024 * 1024;
+    // Plenty of time left -> full chunk
+    expect(computeTailUploadChunkBytes(2 * mib, 400, 3000, true)).toBe(2 * mib);
+    // 250ms left with 500ms previous chunk -> ~42.5% of 2 MiB aligned to 16 KiB (< 1 MiB)
+    const tapered = computeTailUploadChunkBytes(2 * mib, 500, 250, true);
+    expect(tapered).toBeGreaterThanOrEqual(64 * 1024);
+    expect(tapered).toBeLessThan(mib);
+    expect(tapered % (16 * 1024)).toBe(0);
+    // <= 120ms left after bytes already confirmed -> skip starting another request
+    expect(computeTailUploadChunkBytes(mib, 300, 90, true)).toBe(0);
+    // Slow link with zero confirmed bytes yet still gets minChunk before deadline
+    expect(computeTailUploadChunkBytes(128 * 1024, 0, 90, false)).toBe(128 * 1024);
   });
 });

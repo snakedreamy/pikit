@@ -25,10 +25,11 @@ const ALL_TOOL_IDS = [
   'chmod',
   'docker-convert',
   'url-parser',
+  'device-info',
 ] as const;
 
-test.describe('P3 Local-Only Toolbox: All 24 Plugin Workbenches, Bilingual i18n & Zero Network Leak', () => {
-  test('renders all 24 tools in symmetric index, supports favorites & category select, and mounts every lazy tool chunk under strict CSP without network calls', async ({
+test.describe('P3 Local-Only Toolbox: All 25 Plugin Workbenches, Bilingual i18n & Zero Network Leak', () => {
+  test('renders all 25 tools in symmetric index, supports favorites & category select, and mounts every lazy tool chunk under strict CSP without network calls', async ({
     page,
     baseURL,
   }) => {
@@ -71,14 +72,14 @@ test.describe('P3 Local-Only Toolbox: All 24 Plugin Workbenches, Bilingual i18n 
     });
 
     await page.goto('/tools', { waitUntil: 'networkidle' });
-    await expect(page.locator('.tool-card')).toHaveCount(24);
+    await expect(page.locator('.tool-card')).toHaveCount(25);
 
     // Verify favorite star toggle and "Starred only" filter (`pikbay:v1:favorite-tools`)
     const firstStar = page.locator('.tool-card__star').first();
     await firstStar.click();
     await expect(page.locator('.tools-group').first()).toContainText('★');
 
-    // Visit all 24 lazy-loaded tool workbenches to verify computation, bilingual switching, and strict CSP
+    // Visit all 25 lazy-loaded tool workbenches to verify computation, bilingual switching, and strict CSP
     for (const id of ALL_TOOL_IDS) {
       await page.goto(`/tools/${id}`, { waitUntil: 'networkidle' });
       await expect(page.locator('.wb-shell')).toBeVisible();
@@ -97,15 +98,26 @@ test.describe('P3 Local-Only Toolbox: All 24 Plugin Workbenches, Bilingual i18n 
         await expect(page.getByTestId('totp-current-code')).toContainText(/\d{3}\s\d{3}/);
       } else if (id === 'docker-convert') {
         await expect(page.locator('.dk-bench')).toContainText('pikbay.container');
+      } else if (id === 'text-case') {
+        await expect(page.getByTestId('tc-primary-stats')).toBeVisible();
+        await page.locator('#pk-tc-input').fill('pikbay 测速 👨‍👩‍👧‍👦\nsecond line');
+        await expect(page.getByTestId('tc-primary-stats')).toContainText('Code points: 29');
+        await expect(page.getByTestId('tc-primary-stats')).toContainText('3 words · 2 CJK');
+        await expect(page.getByTestId('tc-primary-stats')).toContainText('LF');
+        await expect(page.locator('.tc-freq-chip').first()).toBeVisible();
+      } else if (id === 'device-info') {
+        await expect(page.getByTestId('device-info-bench')).toBeVisible();
+        await expect(page.locator('.di-codec-card')).toHaveCount(8);
+        await expect(page.getByTestId('device-info-bench')).not.toContainText('{count}');
       }
     }
 
-    // Switch locales on the URL Parser workbench and confirm reactive translation updates without missing keys
+    // Switch locales on the Device & Browser Inspector workbench and confirm reactive translation updates without missing keys
     const localeSelect = page.locator('select[name="ui-locale"]');
     await localeSelect.selectOption('zh-CN');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('URL 解析与拼装');
+    await expect(page.locator('.wb-shell__center h2')).toHaveText('设备与浏览器深度诊断');
     await localeSelect.selectOption('en');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('URL Parser & Builder');
+    await expect(page.locator('.wb-shell__center h2')).toHaveText('Device & Browser Inspector');
 
     // Verify no tool inputs or outputs were written to `localStorage` (only allowlisted keys are permitted)
     const storageKeys = await page.evaluate(() => Object.keys(window.localStorage));

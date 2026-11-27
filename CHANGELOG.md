@@ -2,7 +2,7 @@
 
 All notable changes to `pikbay` are documented in this file. Published release sections are append-only; newer releases are added at the top.
 
-## [0.2.0] - 2026-11-26
+## [0.2.0] - 2026-11-27
 
 ### Highlights
 
@@ -11,9 +11,10 @@ All notable changes to `pikbay` are documented in this file. Published release s
   - Pairs two live browser sessions via a CSPRNG one-time **6-digit numeric code** (`code_ttl_seconds = 180` default) with strict **single-attempt room destruction**: the pairing slot is atomically removed on the first join lookup, and any MAC mismatch or disconnect destroys the session immediately to prevent online PIN guessing.
   - Negotiates ephemeral **X25519** keys bound with both 128-bit salts and the 6-digit PIN via **HKDF-SHA256**, verifies mutual **Key Confirmation MACs** before transmitting any transfer metadata, and encrypts text, `Ctrl+V` clipboard captures, and files in **64 KiB ChaCha20-Poly1305 (256-bit AEAD)** chunks with monotonic sequence numbers and an authenticated EOF frame (works identically on HTTPS and plain-HTTP private LAN IPs).
   - Prefers direct LAN **WebRTC `RTCDataChannel`** (`iceServers: []`, zero external STUN/TURN requests) and automatically falls back after 3 seconds to streaming the same AEAD ciphertext chunks over `/api/drop/ws` with bounded `mpsc` / `bufferedAmount` backpressure (`max_relay_mb = 256`), mandatory same-origin `Origin` CSWSH checks, per-IP `governor` rate limiting, and zero server storage.
-- **Expanded 100% In-Browser IT Toolbox (`/tools`, 24 Tools — Full 4×6 Grid)**:
+- **Expanded 100% In-Browser IT Toolbox (`/tools`, 25 Tools)**:
   - **Upgraded `text-diff`**: Adds left/right file pickers and drag-and-drop import (detecting NUL-containing binary files for byte-length & SHA-256 comparison instead of rendering garbled bytes), **Unified / Split** side-by-side view toggle, **collapse unchanged context**, and **ignore trailing whitespace**.
-  - **7 New Lazy-Loaded Local Tools**:
+  - **Upgraded `text-case`**: Expands in place with visual grapheme counting (`Intl.Segmenter` ZWJ emoji aware), Unicode code points, UTF-16 code units, UTF-8 bytes, split CJK & Latin word counts, digits/punctuation/whitespace breakdown, paragraph & sentence counts, `LF / CRLF / CR / mixed` line-ending detection, max/average line length, estimated reading time, Top 8 token frequency, and NUL-guarded local text file import alongside all 9 identifier naming conversions.
+  - **8 New Lazy-Loaded Local Tools**:
     - `totp`: RFC 6238 TOTP generator supporting Base32 secrets & `otpauth://totp/...` URIs, `SHA-1 / SHA-256 / SHA-512`, `6 / 8` digits, custom step period, and live Previous / Current / Next window display (never persisted to `localStorage`).
     - `data-convert`: Three-way `YAML ↔ JSON ↔ TOML` converter, formatter, and exact line/column syntax validator (`yaml` + `smol-toml` isolated in a lazy chunk).
     - `chmod`: Two-way POSIX 12-bit permission matrix (`rwx` + `SUID / SGID / Sticky`) synced with octal (`0640`), symbolic (`rwxr-x---`), and `chmod` CLI commands.
@@ -21,8 +22,10 @@ All notable changes to `pikbay` are documented in this file. Published release s
     - `docker-convert`: Self-contained shell tokenizer converting `docker run` / `podman run` commands into `compose.yaml` and **Podman `.container` Quadlet** systemd unit files.
     - `bcrypt`: Web Worker–isolated Eksblowfish `$2b$` hash generator, password verifier, and `.htpasswd` / Caddy `basic_auth` snippet builder.
     - `text-encrypt`: Offline passphrase-based `PBKDF2-HMAC-SHA256` + `AES-256-GCM` authenticated text encryption & decryption (WebCrypto with bit-exact pure-TS fallback for plain-HTTP LANs).
-- **Security & Architecture Guards**:
-  - Extends `check-no-network.mjs` to ban `RTCPeerConnection` inside `src/features/tools/**`, preserving strict offline guarantees across all 24 tools.
+    - `device-info`: Zero-network client device & browser diagnostics workbench probing physical render pixels, `requestAnimationFrame` measured screen refresh rate (`Hz`), color gamut (`Rec.2020 / P3 / sRGB`) & HDR, Chromium high-entropy Client Hints, unmasked WebGL2 GPU renderer (immediately releasing context) & WebGPU adapter status, 1080p60 hardware media decode matrix (`H.264 / HEVC / AV1 / VP9 / Opus / FLAC / AAC / Vorbis`), security context, and storage quota with one-click Markdown / JSON report export.
+- **Speedtest & Security Refinements**:
+  - Tapers tail upload chunks near the 10-second deadline and drains in-flight `POST /api/speed/up` streams gracefully before aborting, eliminating `H3_REQUEST_CANCELLED` (`502`) reverse-proxy log noise in Caddy over HTTP/3 while keeping manual Stop instantaneous.
+  - Extends `check-no-network.mjs` to ban `RTCPeerConnection` inside `src/features/tools/**`, preserving strict offline guarantees across all 25 tools.
 
 ## [0.1.0] - 2026-11-23
 

@@ -8,6 +8,7 @@
 import {
   computePingAndJitter,
   computeSustainedThroughputMbps,
+  computeTailUploadChunkBytes,
   nextAdaptiveChunkBytes,
   type ByteCheckpoint,
 } from './math';
@@ -337,13 +338,31 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
   };
 
   const phaseCtrl = new AbortController();
-  const onOuterAbort = () => phaseCtrl.abort();
+  let acceptingNew = true;
+  let drainStarted = false;
+  let hardAbortTimer: number | undefined;
+  const UPLOAD_DRAIN_GRACE_MS = 650;
+
+  const onOuterAbort = () => {
+    acceptingNew = false;
+    phaseCtrl.abort();
+  };
   signal.addEventListener('abort', onOuterAbort, { once: true });
 
   let totalBytes = 0;
   const startTs = performance.now();
   const checkpoints: ByteCheckpoint[] = [];
   let fatalError: unknown = null;
+
+  const beginGracefulStop = () => {
+    if (drainStarted) return;
+    drainStarted = true;
+    acceptingNew = false;
+    window.clearInterval(timer);
+    if (!phaseCtrl.signal.aborted) {
+      hardAbortTimer = window.setTimeout(() => phaseCtrl.abort(), UPLOAD_DRAIN_GRACE_MS);
+    }
+  };
 
   const timer = window.setInterval(() => {
     const now = performance.now();
@@ -364,11 +383,11 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
     onTick(instantMbps, sustained);
 
     if (elapsedMs >= durationMs) {
-      phaseCtrl.abort();
+      beginGracefulStop();
     }
   }, sampleMs);
 
-  const stopDeadline = window.setTimeout(() => phaseCtrl.abort(), durationMs);
+  const stopDeadline = window.setTimeout(beginGracefulStop, durationMs);
 
   const worker = async (workerIdx: number) => {
     // Stagger upload stream startups by 35ms so server acknowledgments distribute evenly across ticks
@@ -380,11 +399,22 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
     const minChunk = Math.min(64 * KIB, maxChunkBytes);
     const maxChunk = Math.max(minChunk, maxChunkBytes);
     let chunkBytes = Math.min(128 * KIB, maxChunk);
+    let lastReqDurationMs = 0;
 
-    while (!phaseCtrl.signal.aborted && performance.now() - startTs < durationMs) {
+    while (acceptingNew && !phaseCtrl.signal.aborted) {
+      const remainingMs = durationMs - (performance.now() - startTs);
+      const sendBytes = computeTailUploadChunkBytes(
+        chunkBytes,
+        lastReqDurationMs,
+        remainingMs,
+        totalBytes > 0,
+        minChunk
+      );
+      if (sendBytes <= 0) break;
+
       const reqStart = performance.now();
       try {
-        const blob = getBlob(chunkBytes);
+        const blob = getBlob(sendBytes);
         const res = await fetch(`/api/speed/up?r=${nonce()}`, {
           method: 'POST',
           headers: {
@@ -403,15 +433,19 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
             : blob.size;
         totalBytes += confirmed;
 
-        chunkBytes = nextAdaptiveChunkBytes(
-          chunkBytes,
-          performance.now() - reqStart,
-          maxChunk,
-          minChunk
-        );
+        lastReqDurationMs = Math.max(1, performance.now() - reqStart);
+        if (sendBytes === chunkBytes) {
+          chunkBytes = nextAdaptiveChunkBytes(
+            chunkBytes,
+            lastReqDurationMs,
+            maxChunk,
+            minChunk
+          );
+        }
       } catch (err) {
         if (phaseCtrl.signal.aborted) break;
         fatalError = err;
+        acceptingNew = false;
         phaseCtrl.abort();
         break;
       }
@@ -423,6 +457,9 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
   } finally {
     window.clearInterval(timer);
     window.clearTimeout(stopDeadline);
+    if (hardAbortTimer !== undefined) {
+      window.clearTimeout(hardAbortTimer);
+    }
     signal.removeEventListener('abort', onOuterAbort);
   }
 
