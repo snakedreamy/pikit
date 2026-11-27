@@ -14,7 +14,8 @@
   let alg = $state<HmacAlgorithm>('SHA-256');
   let keyFmt = $state<HmacKeyFormat>('utf8');
   let outFmt = $state<HmacOutFormat>('hex');
-  let secret = $state('pikbay-local-secret');
+  let secret = $state('');
+  let secretTouched = $state(false);
   let message = $state('timestamp=1700000000&node=gw');
   let output = $state('');
   let errKey = $state<'empty_key' | 'invalid_hex_key' | undefined>(undefined);
@@ -37,7 +38,7 @@
   });
 
   const errText = $derived(
-    errKey === 'empty_key'
+    errKey === 'empty_key' && secretTouched
       ? t('errEmptyKey', undefined, NS)
       : errKey === 'invalid_hex_key'
         ? t('errHexKey', undefined, NS)
@@ -47,7 +48,14 @@
 
 <div class="hmac-wrap">
   <Field label={t('secretLabel', undefined, NS)} forId="pk-hmac-key" error={errText}>
-    <Input id="pk-hmac-key" bind:value={secret} mono invalid={Boolean(errText)} />
+    <Input
+      id="pk-hmac-key"
+      bind:value={secret}
+      placeholder={t('errEmptyKey', undefined, NS)}
+      mono
+      invalid={Boolean(errText)}
+      oninput={() => (secretTouched = true)}
+    />
   </Field>
 
   <TransformTool

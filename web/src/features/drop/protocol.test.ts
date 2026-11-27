@@ -109,6 +109,14 @@ describe('/drop end-to-end cryptographic protocol (X25519 + PIN HKDF + mutual MA
     });
     expect(reassembled).toEqual(payload);
 
+    // Authenticated `done` receipt MAC binds exact totalBytes & totalChunks
+    const validDoneMac = receiverSession.computeDoneAckMac(payload.length, totalChunks);
+    expect(senderSession.verifyDoneAckMac(validDoneMac, payload.length, totalChunks)).toBe(true);
+    expect(senderSession.verifyDoneAckMac(validDoneMac, payload.length - 1, totalChunks)).toBe(
+      false
+    );
+    expect(senderSession.verifyDoneAckMac('forged-mac', payload.length, totalChunks)).toBe(false);
+
     // Out-of-order / replayed sequence numbers must be rejected
     expect(() => receiverSession.openS2RFrame(frames[1], 2)).toThrow();
 

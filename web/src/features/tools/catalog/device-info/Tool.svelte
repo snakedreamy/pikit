@@ -410,9 +410,11 @@
         const supported = mcSupported || canPlay === 'probably' || canPlay === 'maybe';
         const tier = !supported
           ? 'unsupported'
-          : powerEfficient
-            ? 'hardware'
-            : 'software';
+          : mcSupported && smooth && powerEfficient
+            ? 'smooth_power'
+            : mcSupported && smooth
+              ? 'smooth'
+              : 'basic';
 
         return {
           id: target.id,
@@ -1009,14 +1011,22 @@
           <div class="di-codec-card__top">
             <strong class="di-codec-card__name">{c.label}</strong>
             <Badge
-              tone={c.tier === 'hardware' ? 'success' : c.tier === 'software' ? 'info' : 'neutral'}
+              tone={
+                c.tier === 'smooth_power'
+                  ? 'success'
+                  : c.tier === 'smooth' || c.tier === 'basic'
+                    ? 'info'
+                    : 'neutral'
+              }
               dot={c.tier !== 'unsupported'}
             >
-              {c.tier === 'hardware'
-                ? t('tierHardware', undefined, NS)
-                : c.tier === 'software'
-                  ? t('tierSoftware', undefined, NS)
-                  : t('tierUnsupported', undefined, NS)}
+              {c.tier === 'smooth_power'
+                ? t('tierSmoothPower', undefined, NS)
+                : c.tier === 'smooth'
+                  ? t('tierSmooth', undefined, NS)
+                  : c.tier === 'basic'
+                    ? t('tierBasic', undefined, NS)
+                    : t('tierUnsupported', undefined, NS)}
             </Badge>
           </div>
           <code class="di-codec-card__mime mono">{c.mime}</code>

@@ -97,7 +97,7 @@ When managing a personal server, homelab, or Tailscale tailnet, bookmarks, inter
 ### Startpage & Hardware Status Strip (`/`)
 
 - **4-Column Responsive Bookmark Grid**: Organizes services by `[[groups]]` across a widescreen `88rem` (`1408px`) symmetric grid (`4 → 3 → 2 → 1` columns) displaying service titles, hosts, and descriptions.
-- **Sandboxed Custom Icons + Automatic Monograms**: Drop `.svg`, `.png`, `.webp`, or `.ico` files into `./icons/` (see [`icons/README.md`](./icons/README.md)). Custom SVGs are served with `O_NOFOLLOW` symlink rejection and an isolated `sandbox` CSP header via `<img>`. When an icon is omitted or missing, `pikbay` renders an engraved 1–3 character monogram badge (`icon_text` or auto-derived initials).
+- **Sandboxed Custom Icons + Automatic Monograms**: Drop `.svg`, `.png`, `.webp`, or `.ico` files into `./icons/` (see [`icons/README.md`](./icons/README.md)). Custom SVGs are served with atomic `O_NOFOLLOW` symlink rejection on Unix (`symlink_metadata` check on Windows) and an isolated `sandbox` CSP header via `<img>`. When an icon is omitted or missing, `pikbay` renders an engraved 1–3 character monogram badge (`icon_text` or auto-derived initials).
 - **1-Second Hardware Telemetry Strip**: Docked directly beneath the top bar (pauses automatically when the browser tab is hidden):
   - **CPU**: Reads host `/proc/stat` total utilization and up to 16 per-core spectrum buckets on bare metal / `systemd`, automatically switching to cgroup v2 quota accounting inside CPU-capped (`--cpus`) containers.
   - **Memory**: Reports `/proc/meminfo` working memory on hosts, or cgroup v2 working-set usage inside memory-capped (`-m`) containers.
@@ -113,7 +113,7 @@ When managing a personal server, homelab, or Tailscale tailnet, bookmarks, inter
 
 - **One-Time 6-Digit Pairing & Single-Attempt Burn**: Open `/drop` on two devices simultaneously to transfer text snippets, `Ctrl+V` clipboard screenshots, or arbitrary files without accounts or persistent server buffers. Each 6-digit code (`code_ttl_seconds = 180`) allows **strictly one** join attempt—wrong codes, MAC mismatches, or mid-transfer disconnects immediately destroy the room.
 - **Ephemeral X25519 + PIN-Bound 256-Bit AEAD**: Both browsers generate ephemeral X25519 key pairs and derive session keys via `HKDF-SHA256` bound to both random salts and the 6-digit PIN. Metadata (filename, MIME, byte length) is encrypted and sent **only after** mutual Key Confirmation MACs succeed; payloads stream in `64 KiB` **ChaCha20-Poly1305** chunks with monotonic sequence numbers and an authenticated EOF frame (works identically on HTTPS and plain-HTTP LAN IPs).
-- **WebRTC Direct + Automatic Zero-Knowledge Relay Fallback**: Negotiates a direct LAN `RTCDataChannel` (`iceServers: []`, zero external STUN/TURN calls) so bytes bypass the server completely. When Wi-Fi AP isolation, container NAT, or cross-subnet routing blocks P2P after 3 seconds, `/drop` seamlessly streams the exact same AEAD ciphertext chunks through `/api/drop/ws` with bounded backpressure (`max_relay_mb = 256`) and zero server storage.
+- **WebRTC Direct + Automatic Zero-Storage Ciphertext Relay Fallback**: Negotiates a direct LAN `RTCDataChannel` (`iceServers: []`, zero external STUN/TURN calls) so bytes bypass the server completely. When Wi-Fi AP isolation, container NAT, or cross-subnet routing blocks P2P after 3 seconds, `/drop` seamlessly streams the exact same AEAD ciphertext chunks through `/api/drop/ws` with bounded backpressure (`max_relay_mb = 256`) and zero server storage (compare SAS codes on both screens when pairing across untrusted networks).
 
 ### 100% In-Browser IT Toolbox (`/tools`, 25 Tools)
 
@@ -351,8 +351,8 @@ npm run e2e
 **2. Why does a bookmark show a 2-letter monogram instead of my file in `icons/`?**
 - Verify `icon` contains only the filename (e.g., `"jellyfin.svg"`—ASCII alphanumeric, `.`, `_`, `-`, with extension `.svg`, `.png`, `.webp`, or `.ico`; subdirectories and symlinks are rejected) and that the service user has read permissions on the file.
 
-**3. Why did `/drop` switch from `WebRTC P2P Direct` to `Zero-Knowledge WS Relay`?**
-- When Wi-Fi AP client isolation, symmetric NAT, container bridge networking, or cross-VLAN firewall rules prevent direct browser-to-browser UDP/TCP connectivity within 3 seconds, `/drop` automatically streams the exact same X25519 + ChaCha20-Poly1305 AEAD ciphertext chunks through `/api/drop/ws` (up to `drop.max_relay_mb`, default `256 MiB`). The server never sees plaintext, filenames, or keys, and retains zero bytes in memory once chunks pass through.
+**3. Why did `/drop` switch from `WebRTC P2P Direct` to `Zero-Storage WS Relay`?**
+- When Wi-Fi AP client isolation, symmetric NAT, container bridge networking, or cross-VLAN firewall rules prevent direct browser-to-browser UDP/TCP connectivity within 3 seconds, `/drop` automatically streams the exact same X25519 + ChaCha20-Poly1305 AEAD ciphertext chunks through `/api/drop/ws` (up to `drop.max_relay_mb`, default `256 MiB`). Passive relays never see plaintext, filenames, or keys, and `pikbay` retains zero bytes in memory once chunks pass through (across untrusted networks, compare the SAS fingerprint displayed on both devices).
 
 **4. Why do sessions sign out after restarting `pikbay`, while speedtest history persists?**
 - To guarantee zero disk writes, `pikbay` generates a fresh 256-bit CSPRNG HMAC signing key in RAM on every startup. Speedtest history lives exclusively in your browser's `localStorage`.

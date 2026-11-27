@@ -48,6 +48,8 @@ export interface DropCryptoSession {
   readonly myConfirmMacB64: string;
   readonly fingerprint: string;
   verifyPeerConfirmMac: (peerMacB64: string) => boolean;
+  computeDoneAckMac: (totalBytes: number, totalChunks: number) => string;
+  verifyDoneAckMac: (macB64: string, totalBytes: number, totalChunks: number) => boolean;
   sealS2RFrame: (kind: number, seq: number, plaintext: Uint8Array) => Uint8Array;
   openS2RFrame: (
     frame: Uint8Array,
@@ -155,7 +157,7 @@ export function deriveDropCryptoSession(params: {
   const salt = concatBytes(senderSalt, receiverSalt);
   const info = concatBytes(enc.encode('pikbay-drop-v1-kdf'), senderPub, receiverPub);
 
-  const okm = hkdfSha256(ikm, salt, info, 80);
+  const okm = hkdfSha256(ikm, salt, info, 104);
   wipeBytes(shared);
   wipeBytes(pinBytes);
   wipeBytes(ikm);
@@ -164,6 +166,7 @@ export function deriveDropCryptoSession(params: {
   const macKey = okm.slice(32, 64);
   const s2rNoncePrefix = okm.slice(64, 68);
   const fpBytes = okm.slice(68, 72);
+  const ackKey = okm.slice(72, 104);
   wipeBytes(okm);
 
   const transcript = concatBytes(senderPub, receiverPub, senderSalt, receiverSalt);
@@ -186,6 +189,16 @@ export function deriveDropCryptoSession(params: {
     .join('')
     .toUpperCase();
 
+  const computeExpectedDoneAck = (totalBytes: number, totalChunks: number): Uint8Array =>
+    hmacPure(
+      'SHA-256',
+      ackKey,
+      concatBytes(
+        enc.encode(`pikbay-drop-done:${Math.floor(totalBytes)}:${Math.floor(totalChunks)}:`),
+        transcript
+      )
+    );
+
   return {
     myConfirmMacB64: bytesToBase64Url(myMac),
     fingerprint,
@@ -193,6 +206,20 @@ export function deriveDropCryptoSession(params: {
       try {
         const candidate = base64UrlToBytes(peerMacB64);
         return constantTimeEqual(candidate, expectedPeerMac);
+      } catch {
+        return false;
+      }
+    },
+    computeDoneAckMac(totalBytes: number, totalChunks: number): string {
+      return bytesToBase64Url(computeExpectedDoneAck(totalBytes, totalChunks));
+    },
+    verifyDoneAckMac(macB64: string, totalBytes: number, totalChunks: number): boolean {
+      try {
+        const candidate = base64UrlToBytes(macB64);
+        const expected = computeExpectedDoneAck(totalBytes, totalChunks);
+        const ok = constantTimeEqual(candidate, expected);
+        wipeBytes(expected);
+        return ok;
       } catch {
         return false;
       }
@@ -249,6 +276,8 @@ export function deriveDropCryptoSession(params: {
       wipeBytes(s2rNoncePrefix);
       wipeBytes(myMac);
       wipeBytes(expectedPeerMac);
+      wipeBytes(ackKey);
+      wipeBytes(transcript);
     },
   };
 }

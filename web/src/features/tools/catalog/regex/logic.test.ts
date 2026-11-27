@@ -23,7 +23,7 @@ describe('regex logic', () => {
     expect(res.matches[1].captures[2]).toBeNull();
   });
 
-  it('advances safely on zero-length matches without infinite looping', () => {
+  it('advances safely on zero-length matches respecting the `u` flag and segments without duplicating prefixes', () => {
     const res = executeRegexMatches('a*', 'g', 'aba');
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -33,6 +33,19 @@ describe('regex logic', () => {
       [2, 'a'],
       [3, ''],
     ]);
+
+    // Surrogate pair ('🚀' = 2 UTF-16 code units): without `u` steps by 1 UTF-16 unit; with `gu` steps by full code point
+    const noU = executeRegexMatches('(?:)', 'g', '🚀');
+    expect(noU.ok && noU.matches.map((m) => m.index)).toEqual([0, 1, 2]);
+    const withU = executeRegexMatches('(?:)', 'gu', '🚀');
+    expect(withU.ok && withU.matches.map((m) => m.index)).toEqual([0, 2]);
+
+    // Zero-width match in the middle of text must not duplicate prefix text in highlighted segments
+    const boundary = executeRegexMatches('(?=[A-Z])', 'g', 'fooBar');
+    expect(boundary.ok).toBe(true);
+    if (!boundary.ok) return;
+    const segs = segmentTextByMatches('fooBar', boundary.matches);
+    expect(segs.map((s) => s.text)).toEqual(['foo', '▏', 'Bar']);
   });
 
   it('reports syntax errors cleanly', () => {

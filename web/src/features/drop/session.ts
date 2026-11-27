@@ -29,6 +29,7 @@ export type DropErrorCode =
   | 'rate_limited'
   | 'mac_mismatch'
   | 'relay_limit_exceeded'
+  | 'payload_too_large'
   | 'peer_disconnected'
   | 'aborted'
   | 'unauthorized'
@@ -61,7 +62,7 @@ export interface ReceivedDropResult {
   fileName?: string;
   mimeType: string;
   totalBytes: number;
-  chunks: Uint8Array[];
+  blob?: Blob;
 }
 
 export interface SendSessionCallbacks {
@@ -91,6 +92,11 @@ const P2P_CONNECT_TIMEOUT_MS = 3000;
 const DC_BUFFER_HIGH_WATER = 512 * 1024;
 const DC_BUFFER_LOW_WATER = 128 * 1024;
 const WS_BUFFER_HIGH_WATER = 512 * 1024;
+/** Maximum in-browser receive size (512 MiB for P2P files; 16 MiB for UTF-8 text) so mobile tabs never OOM. */
+export const DROP_MAX_P2P_FILE_BYTES = 512 * 1024 * 1024;
+export const DROP_MAX_TEXT_BYTES = 16 * 1024 * 1024;
+/** Flush decrypted file chunks into a Blob segment every 64 chunks (~4 MiB) to release JS Uint8Array heap early. */
+const CHUNKS_PER_BLOB_SEGMENT = 64;
 
 function buildDropWsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -177,7 +183,9 @@ export function startDropSendSession(
   let maxRelayMb = 256;
   let transportChosen: 'p2p' | 'relay' | null = null;
   let peerConfirmed = false;
+  let expectedDoneAck: { totalBytes: number; totalChunks: number } | null = null;
   let doneResolver: (() => void) | null = null;
+  let doneRejecter: ((err: Error) => void) | null = null;
   const pendingIce: RTCIceCandidateInit[] = [];
 
   const cleanup = (sendAbort = false) => {
@@ -232,6 +240,23 @@ export function startDropSendSession(
     }
   };
 
+  const handleDoneAckMessage = (rawMac: unknown) => {
+    if (!cryptoSession || !expectedDoneAck) return;
+    const mac = typeof rawMac === 'string' ? rawMac : '';
+    if (
+      cryptoSession.verifyDoneAckMac(
+        mac,
+        expectedDoneAck.totalBytes,
+        expectedDoneAck.totalChunks
+      )
+    ) {
+      doneResolver?.();
+    } else {
+      doneRejecter?.(new Error('Invalid done acknowledgment MAC'));
+      fail('mac_mismatch', true);
+    }
+  };
+
   const streamPayloadOver = async (mode: 'p2p' | 'relay') => {
     if (finished || cancelled || !cryptoSession || transportChosen) return;
     transportChosen = mode;
@@ -260,13 +285,24 @@ export function startDropSendSession(
       const totalBytes =
         payload.kind === 'text' ? textBytes!.byteLength : payload.blob.size;
 
+      if (
+        (payload.kind === 'text' && totalBytes > DROP_MAX_TEXT_BYTES) ||
+        totalBytes > DROP_MAX_P2P_FILE_BYTES
+      ) {
+        if (textBytes) wipeBytes(textBytes);
+        fail('payload_too_large', true);
+        return;
+      }
+
       if (mode === 'relay' && totalBytes > maxRelayMb * 1024 * 1024) {
+        if (textBytes) wipeBytes(textBytes);
         fail('relay_limit_exceeded', true);
         return;
       }
 
       const totalChunks =
         totalBytes === 0 ? 0 : Math.ceil(totalBytes / DROP_CHUNK_PLAINTEXT_BYTES);
+      expectedDoneAck = { totalBytes, totalChunks };
 
       const sendFrame = async (wire: Uint8Array) => {
         if (cancelled || finished) return;
@@ -283,8 +319,9 @@ export function startDropSendSession(
         }
       };
 
-      const doneAckPromise = new Promise<void>((resolve) => {
+      const doneAckPromise = new Promise<void>((resolve, reject) => {
         doneResolver = resolve;
+        doneRejecter = reject;
       });
 
       // 1. Encrypted META frame (`seq = 0`)
@@ -385,8 +422,8 @@ export function startDropSendSession(
       dc.onmessage = (ev) => {
         if (typeof ev.data === 'string') {
           try {
-            const parsed = JSON.parse(ev.data) as { type?: string };
-            if (parsed.type === 'done') doneResolver?.();
+            const parsed = JSON.parse(ev.data) as { type?: string; mac?: string };
+            if (parsed.type === 'done') handleDoneAckMessage(parsed.mac);
           } catch {
             // Ignore
           }
@@ -501,7 +538,7 @@ export function startDropSendSession(
         break;
       }
       case 'done': {
-        doneResolver?.();
+        handleDoneAckMessage(msg.mac);
         break;
       }
       case 'peer_disconnected': {
@@ -558,14 +595,24 @@ export function startDropReceiveSession(
   let peerConfirmed = false;
   let expectedSeq = 0;
   let receivedBytes = 0;
+  let receivedChunkCount = 0;
   let activeMeta: DropTransferMeta | null = null;
   const collectedChunks: Uint8Array[] = [];
+  const blobSegments: Blob[] = [];
   const pendingIce: RTCIceCandidateInit[] = [];
   let announcedTransport = false;
+
+  const flushFileChunksToBlobSegment = () => {
+    if (collectedChunks.length === 0) return;
+    blobSegments.push(new Blob(collectedChunks as BlobPart[], { type: 'application/octet-stream' }));
+    for (const chunk of collectedChunks) wipeBytes(chunk);
+    collectedChunks.length = 0;
+  };
 
   const wipeCollected = () => {
     for (const chunk of collectedChunks) wipeBytes(chunk);
     collectedChunks.length = 0;
+    blobSegments.length = 0;
   };
 
   const cleanup = (sendAbort = false) => {
@@ -638,17 +685,29 @@ export function startDropReceiveSession(
         if (expectedSeq !== 1 || activeMeta !== null) {
           throw new Error('Unexpected duplicate META frame');
         }
-        activeMeta = decodeDropMeta(opened.plaintext);
+        const meta = decodeDropMeta(opened.plaintext);
+        if (
+          (meta.kind === 'text' && meta.totalBytes > DROP_MAX_TEXT_BYTES) ||
+          meta.totalBytes > DROP_MAX_P2P_FILE_BYTES
+        ) {
+          fail('payload_too_large', true);
+          return;
+        }
+        activeMeta = meta;
         cb.onMeta(activeMeta);
         cb.onPhaseChange('receiving');
         cb.onProgress(0, activeMeta.totalBytes);
       } else if (opened.kind === DROP_FRAME_CHUNK) {
         if (!activeMeta) throw new Error('Chunk arrived before META');
         receivedBytes += opened.plaintext.byteLength;
-        if (receivedBytes > activeMeta.totalBytes) {
+        receivedChunkCount += 1;
+        if (receivedBytes > activeMeta.totalBytes || receivedChunkCount > activeMeta.totalChunks) {
           throw new Error('Received bytes exceeded declared totalBytes');
         }
         collectedChunks.push(opened.plaintext);
+        if (activeMeta.kind === 'file' && collectedChunks.length >= CHUNKS_PER_BLOB_SEGMENT) {
+          flushFileChunksToBlobSegment();
+        }
         cb.onProgress(receivedBytes, activeMeta.totalBytes);
       } else if (opened.kind === DROP_FRAME_EOF) {
         if (!activeMeta) throw new Error('EOF arrived before META');
@@ -656,23 +715,28 @@ export function startDropReceiveSession(
         if (
           eof.totalBytes !== activeMeta.totalBytes ||
           receivedBytes !== activeMeta.totalBytes ||
-          collectedChunks.length !== activeMeta.totalChunks ||
+          receivedChunkCount !== activeMeta.totalChunks ||
           eof.totalChunks !== activeMeta.totalChunks
         ) {
           throw new Error('Truncated or mismatched EOF byte count');
         }
 
+        const ackMac = cryptoSession.computeDoneAckMac(
+          activeMeta.totalBytes,
+          activeMeta.totalChunks
+        );
         // Acknowledge verified delivery to sender over both DC and WS before tearing down
         if (dc && dc.readyState === 'open') {
           try {
-            dc.send(JSON.stringify({ type: 'done' }));
+            dc.send(JSON.stringify({ type: 'done', mac: ackMac }));
           } catch {
             // Ignore
           }
         }
-        sendSignal({ type: 'done' });
+        sendSignal({ type: 'done', mac: ackMac });
 
         let decodedText: string | undefined;
+        let finalFileBlob: Blob | undefined;
         if (activeMeta.kind === 'text') {
           const merged = new Uint8Array(activeMeta.totalBytes);
           let off = 0;
@@ -684,10 +748,12 @@ export function startDropReceiveSession(
           collectedChunks.length = 0;
           decodedText = new TextDecoder().decode(merged);
           wipeBytes(merged);
+        } else {
+          flushFileChunksToBlobSegment();
+          finalFileBlob = new Blob(blobSegments, { type: 'application/octet-stream' });
+          blobSegments.length = 0;
         }
 
-        const outChunks = collectedChunks.slice();
-        collectedChunks.length = 0;
         finished = true;
         cb.onPhaseChange('completed');
         cb.onComplete({
@@ -696,9 +762,9 @@ export function startDropReceiveSession(
           fileName: activeMeta.fileName,
           mimeType: activeMeta.mimeType,
           totalBytes: activeMeta.totalBytes,
-          chunks: outChunks,
+          blob: finalFileBlob,
         });
-        // Allow the `done` frame to flush before closing
+        // Allow the authenticated `done` frame to flush before closing
         window.setTimeout(() => cleanup(false), 60);
       } else {
         throw new Error('Unknown AEAD frame kind');

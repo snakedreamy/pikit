@@ -50,4 +50,27 @@ code_ttl_seconds = 180`;
     const resNull = convertStructuredData(jsonWithNull, 'json', 'toml');
     expect(resNull.ok).toBe(false);
   });
+
+  it('auto-detects [section] TOML headers cleanly and preserves 64-bit integers losslessly across all 3 formats', () => {
+    const headerFirstToml = `[server]\nlisten = "127.0.0.1:8080"\nsnowflake_id = 9007199254740993`;
+    expect(detectDataFormat(headerFirstToml)).toBe('toml');
+    expect(detectDataFormat('[[groups]]\nname = "core"')).toBe('toml');
+    expect(detectDataFormat('["127.0.0.1", "::1"]')).toBe('json');
+
+    const toJson = convertStructuredData(headerFirstToml, 'auto', 'json');
+    expect(toJson.ok).toBe(true);
+    if (!toJson.ok) return;
+    expect(toJson.output).toContain('9007199254740993');
+    expect(toJson.output).not.toContain('9007199254740992');
+
+    const toYaml = convertStructuredData(toJson.output, 'auto', 'yaml');
+    expect(toYaml.ok).toBe(true);
+    if (!toYaml.ok) return;
+    expect(toYaml.output).toContain('9007199254740993');
+
+    const backToToml = convertStructuredData(toYaml.output, 'auto', 'toml');
+    expect(backToToml.ok).toBe(true);
+    if (!backToToml.ok) return;
+    expect(backToToml.output).toContain('9007199254740993');
+  });
 });

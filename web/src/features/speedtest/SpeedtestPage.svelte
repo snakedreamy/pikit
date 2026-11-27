@@ -183,6 +183,7 @@
           phaseDurationMs: timing.phaseDurationMs,
           warmupMs: timing.warmupMs,
           onProgress: (snap) => {
+            if (runController !== ctrl) return;
             phase = snap.phase;
             livePing = snap.pingMs;
             liveJitter = snap.jitterMs;
@@ -194,6 +195,8 @@
         },
         ctrl.signal
       );
+
+      if (runController !== ctrl) return;
 
       if (
         finalSnap.downloadMbps !== null &&
@@ -210,6 +213,7 @@
         });
       }
     } catch (err) {
+      if (runController !== ctrl) return;
       if (err instanceof DOMException && err.name === 'AbortError') {
         phase = 'aborted';
       } else if (err instanceof SpeedtestRunError) {

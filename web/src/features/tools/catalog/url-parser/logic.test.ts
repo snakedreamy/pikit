@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseUrlDeep, serializeUrlComponents } from './logic';
+import { buildUrlFromComponents, parseUrlDeep, serializeUrlComponents } from './logic';
 
 describe('URL deep parser & Query parameter rebuilder', () => {
   it('breaks down protocol, credentials, host, port, path, query rows, and hash', () => {
@@ -28,8 +28,18 @@ describe('URL deep parser & Query parameter rebuilder', () => {
     );
   });
 
-  it('rejects malformed URLs cleanly', () => {
+  it('rejects malformed URLs and out-of-range ports while preserving empty-key query params', () => {
     const bad = parseUrlDeep('not a valid url');
     expect(bad.ok).toBe(false);
+
+    const emptyKeyParsed = parseUrlDeep('https://example.com/search?=fallback&k=1');
+    expect(emptyKeyParsed.ok).toBe(true);
+    if (!emptyKeyParsed.ok) return;
+    expect(serializeUrlComponents(emptyKeyParsed.data)).toBe(
+      'https://example.com/search?=fallback&k=1'
+    );
+
+    const badPort = buildUrlFromComponents({ ...emptyKeyParsed.data, port: '70000' });
+    expect(badPort).toEqual({ ok: false, error: 'invalid_port' });
   });
 });

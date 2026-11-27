@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runSpeedtestSession } from './engine';
+import { runSpeedtestSession, sliceUploadBlob } from './engine';
 
 describe('speedtest engine upload drain', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('slices upload blobs to exact non-integer-MiB byte counts without rounding', () => {
+    const unit = new Blob([new Uint8Array(1024 * 1024)], { type: 'application/octet-stream' });
+    expect(sliceUploadBlob(unit, 131_072).size).toBe(131_072);
+    expect(sliceUploadBlob(unit, 1024 * 1024).size).toBe(1024 * 1024);
+    expect(sliceUploadBlob(unit, 1_409_024).size).toBe(1_409_024);
+    expect(sliceUploadBlob(unit, 3 * 1024 * 1024 + 49_152).size).toBe(3 * 1024 * 1024 + 49_152);
   });
 
   it('drains in-flight upload requests gracefully at deadline without aborting POST streams', async () => {

@@ -50,6 +50,17 @@ export type DockerConvertResult =
       error: string;
     };
 
+interface ParsedMountSpec {
+  type: 'bind' | 'volume' | 'tmpfs';
+  source?: string;
+  target: string;
+  readOnly: boolean;
+  bindPropagation?: string;
+  volumeNoCopy?: boolean;
+  tmpfsSize?: string;
+  tmpfsMode?: string;
+}
+
 export function tokenizeShellCommand(raw: string): string[] {
   // Normalize backslash-newline line continuations and strip whole-line comments
   const cleanedLines = raw
@@ -134,7 +145,10 @@ function deriveServiceName(image: string): string {
   const withoutDigest = image.split('@')[0];
   const lastSlash = withoutDigest.split('/').pop() ?? 'app';
   const withoutTag = lastSlash.split(':')[0] || 'app';
-  const sanitized = withoutTag.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const sanitized = withoutTag
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   return sanitized || 'app';
 }
 
@@ -332,16 +346,94 @@ export function parseContainerRunTokens(tokens: readonly string[]): ParsedContai
   return state;
 }
 
+function parseDockerMountSpec(raw: string): ParsedMountSpec {
+  let mountType: 'bind' | 'volume' | 'tmpfs' = 'volume';
+  let source: string | undefined;
+  let target = '';
+  let readOnly = false;
+  let bindPropagation: string | undefined;
+  let volumeNoCopy: boolean | undefined;
+  let tmpfsSize: string | undefined;
+  let tmpfsMode: string | undefined;
+
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const eq = trimmed.indexOf('=');
+    const key = (eq >= 0 ? trimmed.slice(0, eq) : trimmed).trim().toLowerCase();
+    const val = eq >= 0 ? trimmed.slice(eq + 1).trim() : undefined;
+
+    switch (key) {
+      case 'type':
+        if (val === 'bind' || val === 'volume' || val === 'tmpfs') {
+          mountType = val;
+        } else {
+          throw new Error(`Unsupported --mount type: ${val ?? ''}`);
+        }
+        break;
+      case 'src':
+      case 'source':
+        source = val;
+        break;
+      case 'dst':
+      case 'destination':
+      case 'target':
+        target = val ?? '';
+        break;
+      case 'ro':
+      case 'readonly':
+        readOnly = val === undefined || val === 'true' || val === '1';
+        break;
+      case 'bind-propagation':
+        bindPropagation = val;
+        break;
+      case 'volume-nocopy':
+        volumeNoCopy = val === undefined || val === 'true' || val === '1';
+        break;
+      case 'tmpfs-size':
+        tmpfsSize = val;
+        break;
+      case 'tmpfs-mode':
+        tmpfsMode = val;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (!target) {
+    throw new Error(`--mount specification is missing target/destination: ${raw}`);
+  }
+  return {
+    type: mountType,
+    source,
+    target,
+    readOnly,
+    bindPropagation,
+    volumeNoCopy,
+    tmpfsSize,
+    tmpfsMode,
+  };
+}
+
 function yamlScalar(v: string): string {
-  if (/^[a-zA-Z0-9._/@:-]+$/.test(v) && !/^(true|false|null|yes|no|on|off|\d+(\.\d+)?)$/i.test(v)) {
+  if (
+    /^[a-zA-Z0-9._/@:-]+$/.test(v) &&
+    !/^(true|false|null|yes|no|on|off|\d+(\.\d+)?)$/i.test(v)
+  ) {
     return v;
   }
   return JSON.stringify(v);
 }
 
-function renderComposeYaml(p: ParsedContainerRun): string {
+function renderComposeYaml(p: ParsedContainerRun, parsedMounts: readonly ParsedMountSpec[]): string {
   const svc = p.name.replace(/[^a-zA-Z0-9_-]/g, '-') || 'app';
-  const lines: string[] = ['services:', `  ${svc}:`, `    image: ${yamlScalar(p.image)}`, `    container_name: ${yamlScalar(p.name)}`];
+  const lines: string[] = [
+    'services:',
+    `  ${svc}:`,
+    `    image: ${yamlScalar(p.image)}`,
+    `    container_name: ${yamlScalar(p.name)}`,
+  ];
 
   if (p.restart) lines.push(`    restart: ${yamlScalar(p.restart)}`);
   if (p.pull) lines.push(`    pull_policy: ${yamlScalar(p.pull)}`);
@@ -373,7 +465,35 @@ function renderComposeYaml(p: ParsedContainerRun): string {
   pushList('ports', p.ports, true);
   pushList('environment', p.env, true);
   pushList('env_file', p.envFiles);
-  pushList('volumes', [...p.volumes, ...p.mounts], true);
+
+  if (p.volumes.length > 0 || parsedMounts.length > 0) {
+    lines.push('    volumes:');
+    for (const vol of p.volumes) {
+      lines.push(`      - ${JSON.stringify(vol)}`);
+    }
+    for (const m of parsedMounts) {
+      lines.push(`      - type: ${m.type}`);
+      if (m.source) {
+        lines.push(`        source: ${yamlScalar(m.source)}`);
+      }
+      lines.push(`        target: ${yamlScalar(m.target)}`);
+      if (m.readOnly) {
+        lines.push('        read_only: true');
+      }
+      if (m.type === 'bind' && m.bindPropagation) {
+        lines.push('        bind:', `          propagation: ${yamlScalar(m.bindPropagation)}`);
+      }
+      if (m.type === 'volume' && m.volumeNoCopy) {
+        lines.push('        volume:', '          nocopy: true');
+      }
+      if (m.type === 'tmpfs' && (m.tmpfsSize || m.tmpfsMode)) {
+        lines.push('        tmpfs:');
+        if (m.tmpfsSize) lines.push(`          size: ${yamlScalar(m.tmpfsSize)}`);
+        if (m.tmpfsMode) lines.push(`          mode: ${yamlScalar(m.tmpfsMode)}`);
+      }
+    }
+  }
+
   pushList('tmpfs', p.tmpfs);
   pushList('devices', p.devices, true);
   pushList('cap_drop', p.capDrop);
@@ -400,6 +520,17 @@ function renderComposeYaml(p: ParsedContainerRun): string {
       if (!namedVolumes.includes(first)) namedVolumes.push(first);
     }
   }
+  for (const m of parsedMounts) {
+    if (
+      m.type === 'volume' &&
+      m.source &&
+      !m.source.startsWith('/') &&
+      !m.source.startsWith('.') &&
+      !m.source.startsWith('~')
+    ) {
+      if (!namedVolumes.includes(m.source)) namedVolumes.push(m.source);
+    }
+  }
   if (namedVolumes.length > 0) {
     lines.push('', 'volumes:');
     for (const nv of namedVolumes) {
@@ -418,40 +549,79 @@ function renderComposeYaml(p: ParsedContainerRun): string {
   return lines.join('\n');
 }
 
-function quadletEscapeValue(v: string): string {
-  return /\s/.test(v) ? JSON.stringify(v) : v;
+/**
+ * Rejects control characters (CR, LF, NUL) in single-line systemd Quadlet fields so untrusted
+ * quoted multiline tokens can never break out into arbitrary `[Service]` unit directives.
+ */
+function assertSafeQuadletToken(fieldName: string, value: string): string {
+  if (/[\r\n\0]/.test(value)) {
+    throw new Error(`Newline or NUL control character is not permitted in ${fieldName}`);
+  }
+  return value;
+}
+
+/**
+ * Escapes arbitrary strings (such as `Environment=`, `Label=`, or `Exec=` arguments) into a single
+ * systemd-compliant C-escaped token (`\n`, `\r`, `\t`, `\"`, `\\`), guaranteeing zero raw line breaks.
+ */
+function systemdEscapeValue(fieldName: string, v: string): string {
+  if (v.includes('\0')) {
+    throw new Error(`NUL character is not permitted in ${fieldName}`);
+  }
+  if (!/[\s"'\\]/.test(v)) {
+    return v;
+  }
+  let escaped = '"';
+  for (let i = 0; i < v.length; i += 1) {
+    const ch = v[i];
+    if (ch === '\\') escaped += '\\\\';
+    else if (ch === '"') escaped += '\\"';
+    else if (ch === '\n') escaped += '\\n';
+    else if (ch === '\r') escaped += '\\r';
+    else if (ch === '\t') escaped += '\\t';
+    else escaped += ch;
+  }
+  escaped += '"';
+  return escaped;
 }
 
 function mapSystemdRestart(dockerRestart?: string): string {
   if (!dockerRestart || dockerRestart === 'no') return 'no';
+  assertSafeQuadletToken('--restart', dockerRestart);
   if (dockerRestart.startsWith('on-failure')) return 'on-failure';
   // Both `always` and `unless-stopped` map cleanly to `always` under systemd service management
   return 'always';
 }
 
 function renderPodmanQuadlet(p: ParsedContainerRun, opts?: DockerConvertOptions): string {
+  const safeName = assertSafeQuadletToken('--name', p.name);
+  const safeImage = assertSafeQuadletToken('image', p.image);
+
   const lines: string[] = [
     '[Unit]',
-    `Description=${p.name} container`,
+    `Description=${safeName} container`,
     'After=network-online.target',
     'Wants=network-online.target',
     '',
     '[Container]',
-    `ContainerName=${p.name}`,
-    `Image=${p.image}`,
+    `ContainerName=${safeName}`,
+    `Image=${safeImage}`,
   ];
 
   if (opts?.quadletAutoUpdate) {
     lines.push('AutoUpdate=registry');
   }
-  if (p.pull) lines.push(`Pull=${p.pull}`);
-  if (p.network) lines.push(`Network=${p.network}`);
-  if (p.hostname) lines.push(`HostName=${p.hostname}`);
-  if (p.workdir) lines.push(`WorkingDir=${p.workdir}`);
-  if (p.entrypoint) lines.push(`Entrypoint=${p.entrypoint}`);
+  if (p.pull) lines.push(`Pull=${assertSafeQuadletToken('--pull', p.pull)}`);
+  if (p.network) lines.push(`Network=${assertSafeQuadletToken('--network', p.network)}`);
+  if (p.hostname) lines.push(`HostName=${assertSafeQuadletToken('--hostname', p.hostname)}`);
+  if (p.workdir) lines.push(`WorkingDir=${assertSafeQuadletToken('--workdir', p.workdir)}`);
+  if (p.entrypoint) {
+    lines.push(`Entrypoint=${systemdEscapeValue('--entrypoint', p.entrypoint)}`);
+  }
 
   if (p.user) {
-    const [u, g] = p.user.split(':');
+    const safeUser = assertSafeQuadletToken('--user', p.user);
+    const [u, g] = safeUser.split(':');
     if (u) lines.push(`User=${u}`);
     if (g) lines.push(`Group=${g}`);
   }
@@ -459,44 +629,67 @@ function renderPodmanQuadlet(p: ParsedContainerRun, opts?: DockerConvertOptions)
   if (p.readOnly) lines.push('ReadOnly=true');
   if (p.tty) lines.push('PodmanArgs=--tty');
 
-  for (const port of p.ports) lines.push(`PublishPort=${port}`);
-  for (const env of p.env) lines.push(`Environment=${quadletEscapeValue(env)}`);
-  for (const ef of p.envFiles) lines.push(`EnvironmentFile=${ef}`);
-  for (const vol of p.volumes) lines.push(`Volume=${vol}`);
-  for (const mnt of p.mounts) lines.push(`Mount=${mnt}`);
-  for (const tf of p.tmpfs) lines.push(`Tmpfs=${tf}`);
-  for (const dev of p.devices) lines.push(`AddDevice=${dev}`);
-  for (const cd of p.capDrop) lines.push(`DropCapability=${cd}`);
-  for (const ca of p.capAdd) lines.push(`AddCapability=${ca}`);
+  for (const port of p.ports) {
+    lines.push(`PublishPort=${assertSafeQuadletToken('--publish', port)}`);
+  }
+  for (const env of p.env) {
+    lines.push(`Environment=${systemdEscapeValue('--env', env)}`);
+  }
+  for (const ef of p.envFiles) {
+    lines.push(`EnvironmentFile=${assertSafeQuadletToken('--env-file', ef)}`);
+  }
+  for (const vol of p.volumes) {
+    lines.push(`Volume=${assertSafeQuadletToken('--volume', vol)}`);
+  }
+  for (const mnt of p.mounts) {
+    lines.push(`Mount=${assertSafeQuadletToken('--mount', mnt)}`);
+  }
+  for (const tf of p.tmpfs) {
+    lines.push(`Tmpfs=${assertSafeQuadletToken('--tmpfs', tf)}`);
+  }
+  for (const dev of p.devices) {
+    lines.push(`AddDevice=${assertSafeQuadletToken('--device', dev)}`);
+  }
+  for (const cd of p.capDrop) {
+    lines.push(`DropCapability=${assertSafeQuadletToken('--cap-drop', cd)}`);
+  }
+  for (const ca of p.capAdd) {
+    lines.push(`AddCapability=${assertSafeQuadletToken('--cap-add', ca)}`);
+  }
 
   for (const sec of p.securityOpt) {
-    if (sec === 'no-new-privileges' || sec === 'no-new-privileges:true') {
+    const safeSec = assertSafeQuadletToken('--security-opt', sec);
+    if (safeSec === 'no-new-privileges' || safeSec === 'no-new-privileges:true') {
       lines.push('NoNewPrivileges=true');
-    } else if (sec === 'label=disable' || sec === 'label:disable') {
+    } else if (safeSec === 'label=disable' || safeSec === 'label:disable') {
       lines.push('SecurityLabelDisable=true');
     } else {
-      lines.push(`PodmanArgs=--security-opt=${quadletEscapeValue(sec)}`);
+      lines.push(`PodmanArgs=--security-opt=${systemdEscapeValue('--security-opt', safeSec)}`);
     }
   }
 
-  for (const host of p.extraHosts) lines.push(`AddHost=${host}`);
-  for (const lbl of p.labels) lines.push(`Label=${quadletEscapeValue(lbl)}`);
+  for (const host of p.extraHosts) {
+    lines.push(`AddHost=${assertSafeQuadletToken('--add-host', host)}`);
+  }
+  for (const lbl of p.labels) {
+    lines.push(`Label=${systemdEscapeValue('--label', lbl)}`);
+  }
 
   if (p.privileged) {
     lines.push('PodmanArgs=--privileged');
   }
   if (p.cpus) {
-    lines.push(`PodmanArgs=--cpus=${p.cpus}`);
+    lines.push(`PodmanArgs=--cpus=${assertSafeQuadletToken('--cpus', p.cpus)}`);
   }
   if (p.command.length > 0) {
-    lines.push(`Exec=${p.command.map(quadletEscapeValue).join(' ')}`);
+    lines.push(`Exec=${p.command.map((arg) => systemdEscapeValue('command', arg)).join(' ')}`);
   }
 
   lines.push('', '[Service]');
   lines.push(`Restart=${mapSystemdRestart(p.restart ?? 'on-failure')}`);
   lines.push('RestartSec=5');
   if (p.memory) {
-    lines.push(`MemoryMax=${p.memory.toUpperCase()}`);
+    lines.push(`MemoryMax=${assertSafeQuadletToken('--memory', p.memory).toUpperCase()}`);
   }
 
   lines.push('', '[Install]', 'WantedBy=default.target');
@@ -517,12 +710,17 @@ export function convertDockerRun(
       return { ok: false, error: 'Command contains no arguments' };
     }
     const parsed = parseContainerRunTokens(tokens);
+    const parsedMounts = parsed.mounts.map(parseDockerMountSpec);
+    const quadletUnit = renderPodmanQuadlet(parsed, options);
+    const composeYaml = renderComposeYaml(parsed, parsedMounts);
+    const safeUnitBase = parsed.name.replace(/[^a-zA-Z0-9_.@-]/g, '-') || 'app';
+
     return {
       ok: true,
       serviceName: parsed.name,
-      unitFileName: `${parsed.name}.container`,
-      composeYaml: renderComposeYaml(parsed),
-      quadletUnit: renderPodmanQuadlet(parsed, options),
+      unitFileName: `${safeUnitBase}.container`,
+      composeYaml,
+      quadletUnit,
       warnings: parsed.warnings,
     };
   } catch (err) {

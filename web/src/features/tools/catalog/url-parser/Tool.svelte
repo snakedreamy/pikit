@@ -1,7 +1,12 @@
 <script lang="ts">
   import { t } from '../../../../lib/i18n/index.svelte';
   import { Button, Checkbox, CodeBlock, Field, Icon, IconButton, Input } from '../../../../ui';
-  import { parseUrlDeep, serializeUrlComponents, type QueryParamRow } from './logic';
+  import {
+    buildUrlFromComponents,
+    parseUrlDeep,
+    type BuildUrlErrorKind,
+    type QueryParamRow,
+  } from './logic';
 
   const NS = 'tool:url-parser';
 
@@ -9,6 +14,7 @@
     'https://gw.example.ts.net:8443/api/v1/nodes?region=ap-east&role=edge&limit=50#overview'
   );
   let parseError = $state(false);
+  let buildError = $state<BuildUrlErrorKind | null>(null);
 
   let protocol = $state('https');
   let username = $state('');
@@ -32,6 +38,7 @@
       return;
     }
     parseError = false;
+    buildError = null;
     protocol = res.data.protocol;
     username = res.data.username;
     password = res.data.password;
@@ -44,7 +51,7 @@
   }
 
   function syncToRawUrl() {
-    const next = serializeUrlComponents({
+    const res = buildUrlFromComponents({
       protocol,
       username,
       password,
@@ -54,14 +61,13 @@
       hash,
       params,
     });
-    if (next) {
-      rawUrl = next;
+    if (res.ok) {
+      rawUrl = res.url;
+      origin = res.origin;
       parseError = false;
-      try {
-        origin = new URL(next).origin;
-      } catch {
-        // Ignore
-      }
+      buildError = null;
+    } else {
+      buildError = res.error;
     }
   }
 
@@ -80,8 +86,8 @@
     syncToRawUrl();
   }
 
-  const rebuilt = $derived(
-    serializeUrlComponents({
+  const buildResult = $derived(
+    buildUrlFromComponents({
       protocol,
       username,
       password,
@@ -90,8 +96,9 @@
       pathname,
       hash,
       params,
-    }) ?? rawUrl
+    })
   );
+  const rebuilt = $derived(buildResult.ok ? buildResult.url : rawUrl);
 </script>
 
 <div class="up-bench">
@@ -114,11 +121,32 @@
     <Field label={t('protocolLabel', undefined, NS)} forId="pk-up-proto">
       <Input id="pk-up-proto" bind:value={protocol} mono oninput={syncToRawUrl} />
     </Field>
-    <Field label={t('hostLabel', undefined, NS)} forId="pk-up-host">
-      <Input id="pk-up-host" bind:value={hostname} mono oninput={syncToRawUrl} />
+    <Field
+      label={t('hostLabel', undefined, NS)}
+      forId="pk-up-host"
+      error={buildError === 'missing_host' ? t('missingHost', undefined, NS) : undefined}
+    >
+      <Input
+        id="pk-up-host"
+        bind:value={hostname}
+        mono
+        invalid={buildError === 'missing_host' || buildError === 'invalid_url'}
+        oninput={syncToRawUrl}
+      />
     </Field>
-    <Field label={t('portLabel', undefined, NS)} forId="pk-up-port">
-      <Input id="pk-up-port" bind:value={port} mono placeholder="80 / 443" oninput={syncToRawUrl} />
+    <Field
+      label={t('portLabel', undefined, NS)}
+      forId="pk-up-port"
+      error={buildError === 'invalid_port' ? t('invalidPort', undefined, NS) : undefined}
+    >
+      <Input
+        id="pk-up-port"
+        bind:value={port}
+        mono
+        placeholder="80 / 443"
+        invalid={buildError === 'invalid_port'}
+        oninput={syncToRawUrl}
+      />
     </Field>
     <Field label={t('originLabel', undefined, NS)} forId="pk-up-origin">
       <Input id="pk-up-origin" value={origin} mono readonly />

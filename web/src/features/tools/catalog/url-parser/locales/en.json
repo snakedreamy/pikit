@@ -4,6 +4,8 @@
   "keywords": "url, uri, query, searchparams, parse, builder, host, path",
   "inputLabel": "Input URL",
   "invalidUrl": "Invalid URL format (include scheme such as https://)",
+  "invalidPort": "Port must be between 1 and 65535",
+  "missingHost": "Scheme and hostname are required",
   "protocolLabel": "Scheme",
   "hostLabel": "Hostname",
   "portLabel": "Port",

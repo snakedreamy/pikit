@@ -60,16 +60,30 @@ function createRandomOneMiBChunk(): Uint8Array<ArrayBuffer> {
   return buf;
 }
 
-function buildUploadBlob(unitMiB: Uint8Array<ArrayBuffer>, targetBytes: number): Blob {
-  if (targetBytes < unitMiB.byteLength) {
-    return new Blob([unitMiB.subarray(0, targetBytes)], {
-      type: 'application/octet-stream',
-    });
+function createRandomOneMiBBlob(): Blob {
+  return new Blob([createRandomOneMiBChunk()], { type: 'application/octet-stream' });
+}
+
+/**
+ * Builds an upload `Blob` of exact `targetBytes` length by slicing/referencing a single 1 MiB base `Blob`,
+ * avoiding repeated `Uint8Array` memory copies, unbounded per-size `Blob` caches, and integer-MiB tail rounding.
+ */
+export function sliceUploadBlob(unitMiBBlob: Blob, targetBytes: number): Blob {
+  const safeBytes = Math.max(1, Math.floor(targetBytes));
+  if (safeBytes < MIB) {
+    return unitMiBBlob.slice(0, safeBytes, 'application/octet-stream');
   }
-  const count = Math.max(1, Math.round(targetBytes / unitMiB.byteLength));
-  const parts: Array<Uint8Array<ArrayBuffer>> = [];
-  for (let i = 0; i < count; i += 1) {
-    parts.push(unitMiB);
+  if (safeBytes === MIB) {
+    return unitMiBBlob;
+  }
+  const fullCount = Math.floor(safeBytes / MIB);
+  const rem = safeBytes % MIB;
+  const parts: BlobPart[] = [];
+  for (let i = 0; i < fullCount; i += 1) {
+    parts.push(unitMiBBlob);
+  }
+  if (rem > 0) {
+    parts.push(unitMiBBlob.slice(0, rem));
   }
   return new Blob(parts, { type: 'application/octet-stream' });
 }
@@ -326,16 +340,8 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
     checkStatus,
     onTick,
   } = args;
-  const randomUnit = createRandomOneMiBChunk();
-  const blobCache = new Map<number, Blob>();
-  const getBlob = (bytes: number): Blob => {
-    let b = blobCache.get(bytes);
-    if (!b) {
-      b = buildUploadBlob(randomUnit, bytes);
-      blobCache.set(bytes, b);
-    }
-    return b;
-  };
+  const unitBlob = createRandomOneMiBBlob();
+  const getBlob = (bytes: number): Blob => sliceUploadBlob(unitBlob, bytes);
 
   const phaseCtrl = new AbortController();
   let acceptingNew = true;

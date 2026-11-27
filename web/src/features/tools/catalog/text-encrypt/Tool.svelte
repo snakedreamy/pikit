@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { t } from '../../../../lib/i18n/index.svelte';
   import { Button, CodeBlock, Field, Input, Segmented, Select, TextArea } from '../../../../ui';
   import { decryptTextWithPassphrase, encryptTextWithPassphrase } from './logic';
@@ -7,7 +6,7 @@
   const NS = 'tool:text-encrypt';
 
   let mode = $state<'encrypt' | 'decrypt'>('encrypt');
-  let passphrase = $state('pikbay-offline-vault-key');
+  let passphrase = $state('');
   let kdfRoundsStr = $state('210000');
   let input = $state('[Peer]\nPublicKey = x9K3vL8mQ2pR7tW4zN1bC6fH0jD5sG8aE2yU4iO6pA8=\nPresharedKey = m7P2qW9xL4vK8nJ1rT5yB3cF6hD0gS9aZ2eU7iO4pQ1=');
   let output = $state('');
@@ -37,15 +36,17 @@
     const target = next === 'decrypt' ? 'decrypt' : 'encrypt';
     if (target === mode) return;
     mode = target;
+    errorCode = null;
     if (target === 'decrypt' && output.startsWith('PKB1.')) {
       input = output;
+      output = '';
+      if (passphrase) {
+        void executeCipher();
+      }
+    } else {
+      output = '';
     }
-    void executeCipher();
   }
-
-  onMount(() => {
-    void executeCipher();
-  });
 </script>
 
 <div class="te-bench">

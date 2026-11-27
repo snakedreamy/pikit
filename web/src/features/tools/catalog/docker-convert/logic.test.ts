@@ -56,4 +56,34 @@ describe('docker run / podman run -> compose.yaml & Podman Quadlet converter', (
     expect(res.composeYaml).toContain('command: ["sh", "-c", "echo ok"]');
     expect(res.quadletUnit).toContain('Exec=sh -c "echo ok"');
   });
+
+  it('converts --mount specs into structured Compose long syntax and blocks Quadlet unit newline injection', () => {
+    const mountRes = convertDockerRun(
+      'docker run --name web --mount type=bind,source=/srv/www,target=/usr/share/nginx/html,readonly nginx:alpine'
+    );
+    expect(mountRes.ok).toBe(true);
+    if (mountRes.ok) {
+      expect(mountRes.composeYaml).toContain('- type: bind');
+      expect(mountRes.composeYaml).toContain('source: /srv/www');
+      expect(mountRes.composeYaml).toContain('target: /usr/share/nginx/html');
+      expect(mountRes.composeYaml).toContain('read_only: true');
+      expect(mountRes.quadletUnit).toContain(
+        'Mount=type=bind,source=/srv/www,target=/usr/share/nginx/html,readonly'
+      );
+    }
+
+    // Quoted newline in --name must be rejected rather than injecting a forged `[Service]` directive
+    const injectedName = convertDockerRun(
+      'podman run --name "app\n[Service]\nExecStartPre=/bin/sh" alpine:3.21'
+    );
+    expect(injectedName.ok).toBe(false);
+
+    // Quoted newline inside `-e` environment value must be C-escaped onto a single line (`\n`)
+    const multilineEnv = convertDockerRun('podman run -e "BANNER=line1\n[Service]\nExecStart=/bin/sh" alpine:3.21');
+    expect(multilineEnv.ok).toBe(true);
+    if (multilineEnv.ok) {
+      expect(multilineEnv.quadletUnit).not.toContain('\nExecStart=/bin/sh');
+      expect(multilineEnv.quadletUnit).toContain('Environment="BANNER=line1\\n[Service]\\nExecStart=/bin/sh"');
+    }
+  });
 });

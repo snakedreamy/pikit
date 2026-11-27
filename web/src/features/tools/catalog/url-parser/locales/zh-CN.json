@@ -4,6 +4,8 @@
   "keywords": "url, 链接, 解析, query, 参数, 拼接, 域名, 路径",
   "inputLabel": "待解析 URL",
   "invalidUrl": "URL 格式不合法（请包含协议头，例如 https://）",
+  "invalidPort": "端口号需为 1–65535 之间的整数",
+  "missingHost": "协议与主机名不能为空",
   "protocolLabel": "协议 (Scheme)",
   "hostLabel": "主机名 (Host)",
   "portLabel": "端口 (Port)",

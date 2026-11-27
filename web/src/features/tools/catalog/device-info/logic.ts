@@ -31,7 +31,7 @@ export interface RefreshRateSample {
   sampleCount: number;
 }
 
-export type CodecSupportTier = 'hardware' | 'software' | 'unsupported';
+export type CodecSupportTier = 'smooth_power' | 'smooth' | 'basic' | 'unsupported';
 
 export interface CodecProbeEntry {
   id: string;

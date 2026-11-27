@@ -14,13 +14,13 @@
   const NS = 'tool:bcrypt';
 
   let username = $state('admin');
-  let password = $state('homelab-gateway-secret');
+  let password = $state('');
   let roundsStr = $state('10');
   let computingGen = $state(false);
   let genResult = $state<BcryptGenerateOutput | null>(null);
 
   let verifyHash = $state('');
-  let verifyPassword = $state('homelab-gateway-secret');
+  let verifyPassword = $state('');
   let verifyResult = $state<BcryptVerifyOutput | null>(null);
 
   let workerRef: Worker | null = null;
@@ -50,6 +50,10 @@
   }
 
   function runGenerate() {
+    if (!password) {
+      genResult = null;
+      return;
+    }
     const rounds = Number(roundsStr) || 10;
     const w = getWorker();
     if (!w) {
@@ -88,7 +92,6 @@
   }
 
   onMount(() => {
-    runGenerate();
     return () => {
       workerRef?.terminate();
       workerRef = null;
@@ -146,7 +149,7 @@
       </div>
 
       <div class="bc-gen-row__btn">
-        <Button variant="primary" onclick={runGenerate} disabled={computingGen}>
+        <Button variant="primary" onclick={runGenerate} disabled={computingGen || !password}>
           {computingGen ? t('computing', undefined, NS) : t('generateBtn', undefined, NS)}
         </Button>
       </div>

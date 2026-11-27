@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { DropLimitsMeta } from '../../lib/api';
-  import { wipeBytes } from '../../lib/crypto';
   import { formatBytes, registerLocaleGlob, t, type MessageTree } from '../../lib/i18n/index.svelte';
   import {
     Badge,
@@ -116,7 +115,6 @@
       text: previewSample.receivedText,
       mimeType: 'text/plain;charset=utf-8',
       totalBytes: new TextEncoder().encode(previewSample.receivedText).byteLength,
-      chunks: [],
     };
   });
 
@@ -142,12 +140,7 @@
   }
 
   function wipeReceivedBuffers() {
-    if (receivedPayload) {
-      for (const c of receivedPayload.chunks) {
-        wipeBytes(c);
-      }
-      receivedPayload = null;
-    }
+    receivedPayload = null;
   }
 
   function resetSendBay() {
@@ -350,15 +343,9 @@
   }
 
   function downloadReceivedFile() {
-    if (!receivedPayload || receivedPayload.kind !== 'file') return;
+    if (!receivedPayload || receivedPayload.kind !== 'file' || !receivedPayload.blob) return;
     // Force `application/octet-stream` download via `<a download>` so untrusted HTML/SVG is never rendered in DOM
-    const parts: BlobPart[] = receivedPayload.chunks.map((c) => {
-      const copy = new Uint8Array(c.byteLength);
-      copy.set(c);
-      return copy;
-    });
-    const blob = new Blob(parts, { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(receivedPayload.blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = sanitizeTransferFileName(receivedPayload.fileName);

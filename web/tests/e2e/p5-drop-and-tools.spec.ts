@@ -204,8 +204,11 @@ test.describe('P5 Encrypted Peer Drop (/drop) & v0.2.0 Toolbox Upgrades', () => 
     await expect(binPanel).toBeVisible();
     await expect(binPanel).toContainText(/SHA-256 Match|SHA-256 匹配/i);
 
-    // Verify offline AES-256-GCM `text-encrypt` encrypt -> decrypt round-trip
+    // Verify offline AES-256-GCM `text-encrypt` starts without pre-filled public passphrase output, then round-trips cleanly
     await page.goto('/tools/text-encrypt', { waitUntil: 'networkidle' });
+    await expect(page.locator('.pk-codeblock__pre')).toHaveCount(0);
+    await page.locator('#pk-te-pass').fill('e2e-strong-vault-passphrase-2026');
+    await page.getByRole('button', { name: /Encrypt Now|立即加密/i }).click();
     await expect(page.locator('.pk-codeblock__pre')).toContainText('PKB1.');
     await page.getByRole('radio', { name: /Decrypt|解密密文/i }).click();
     await expect(page.locator('.pk-codeblock__pre')).toContainText('PresharedKey');

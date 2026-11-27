@@ -84,11 +84,15 @@ export function executeRegexMatches(
         groups: groupEntries && Object.keys(groupEntries).length > 0 ? groupEntries : null,
       });
 
-      // Advance past zero-length matches (stepping by Unicode code point under `u` flag) to prevent infinite loops
+      // Advance past zero-length matches (stepping by Unicode code point only when `u` flag is active)
       if (m[0].length === 0) {
         if (re.lastIndex >= text.length) break;
-        const code = text.codePointAt(re.lastIndex);
-        re.lastIndex += code !== undefined && code > 0xffff ? 2 : 1;
+        if (flags.includes('u')) {
+          const code = text.codePointAt(re.lastIndex);
+          re.lastIndex += code !== undefined && code > 0xffff ? 2 : 1;
+        } else {
+          re.lastIndex += 1;
+        }
       }
     }
   } else {
@@ -148,6 +152,7 @@ export function segmentTextByMatches(
         matched: true,
         matchOrder: i + 1,
       });
+      cursor = item.index;
     }
   }
 

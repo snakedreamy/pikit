@@ -138,7 +138,7 @@ describe('device-info logic', () => {
           id: 'av1',
           label: 'AV1',
           mime: 'video/mp4; codecs="av01.0.08M.08"',
-          tier: 'hardware',
+          tier: 'smooth_power',
           canPlay: 'probably',
           smooth: true,
           powerEfficient: true,
