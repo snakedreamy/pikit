@@ -121,7 +121,7 @@
 
 | 分类 | 内置工具清单 |
 |---|---|
-| **编码与数据格式** | `Base64 编解码`（标准 / URL-Safe 及二进制文件互转）、`URL 编解码`、`JSON 格式化校验`（无损保留 64 位大整数 + 错误行列定位）、`YAML · JSON · TOML 互转`（三向配置转换、排版与精确行列语法校验）、`时间戳转换`（自动识别秒/毫秒，支持本地夏令时与 ISO 8601）、`进制转换`（`BigInt` 2~36 任意进制）、`颜色格式转换`（`HEX / RGB / HSL / OKLCH`） |
+| **编码与数据格式** | `Base64 编解码`（标准 / URL-Safe 及二进制文件互转）、`URL 编解码`、`JSON 格式化校验`（无损保留 64 位大整数 + 错误行列定位）、`YAML · JSON · TOML 互转`（三向配置转换、排版与精确行列语法校验）、`时间戳转换`（`自动 / 秒 / 毫秒` 切换，支持本地夏令时与 ISO 8601）、`进制转换`（`BigInt` 2~36 任意进制）、`颜色格式转换`（`HEX / RGB / HSL / OKLCH`） |
 | **加密、哈希与令牌** | `哈希摘要计算`（`SHA-1 / SHA-256 / SHA-384 / SHA-512` 与 `MD5`）、`HMAC 消息认证码`、`Bcrypt 哈希与校验`（Web Worker 隔离计算 `$2b$` 哈希、口令验证及 `.htpasswd` / Caddy `basic_auth` 配置生成）、`文本口令加密`（`PBKDF2-SHA256` 随机盐 + `AES-256-GCM` 离线加解密，兼容内网纯 HTTP）、`UUID v4 / v7 生成`、`随机密码 / Token 生成`（CSPRNG 拒绝采样 + 香农熵）、`JWT 离线解析`、`TOTP 动态口令`（RFC 6238，支持 Base32 与 `otpauth://`，同屏展示上一期 / 当前 / 下一期口令） |
 | **文本、对比与 Web** | `文本与文件对比`（支持左右双文件拖拽导入、二进制 NUL 检测与 SHA-256 比对、并排 Split / 合并 Unified 视图、折叠相同行与忽略行尾空白）、`正则表达式测试`（捕获组明细表 + 独立 Web Worker 800ms 防 ReDoS 超时）、`文本统计与命名转换`（视觉字素 / Unicode 码点 / UTF-8 与 UTF-16 长度、中英词数、换行符类型、阅读耗时、高频词统计 + 9 种命名风格）、`URL 解析与拼装`（协议/认证/主机/路径拆解 + 可逐行增删改的 Query 参数表实时回拼）、`设备与浏览器深度诊断`（物理像素、rAF 实测刷新率 `Hz`、Client Hints、WebGL/WebGPU 显卡型号、1080p60 硬解矩阵与 Markdown/JSON 报告复制） |
 | **网络、容器与运维** | `IPv4 / IPv6 子网计算`（`BigInt` CIDR 计算，支持 RFC 3021 `/31` 与 RFC 5952 压缩）、`Chmod 权限计算`（Owner/Group/Other `rwx` + `SUID/SGID/Sticky` 矩阵双向联动八进制、符号串与命令）、`容器命令转 Compose / Quadlet`（自研分词器将 `docker/podman run` 转为 `compose.yaml` 与 **Podman `.container` Quadlet** 单元文件）、`Cron 表达式解析`（5/6 段解析与未来 8 次触发推算）、`二维码生成`（矢量 `SVG` 与高清 `PNG` 导出） |
@@ -140,7 +140,7 @@
 
 ```bash
 # 以 Linux x86_64 为例（ARM64 设备请改为 aarch64-unknown-linux-musl）
-VERSION="v0.2.0"
+VERSION="v0.3.0"
 ARCH="x86_64-unknown-linux-musl"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/pikbay-${VERSION}-${ARCH}.tar.gz"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/SHA256SUMS.txt"
@@ -200,7 +200,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/api/meta
 ```
 
-- **升级与无损回退**：下载或编译新二进制（`./pikbay --version`）覆盖 `/opt/pikbay/pikbay` 后执行 `sudo systemctl restart pikbay`。旧版 `v0.1.0` 配置文件（`version = 1`）无需任何修改即可直接平滑升级至 `v0.2.0`（未显式填写 `[drop]` 段时自动启用安全默认项）。若未来大版本调整了配置结构，`pikbay` 会在启动期直接拒绝启动而绝不修改旧配置文件，换回旧二进制即可立即回退。
+- **升级与无损回退**：下载或编译新二进制（`./pikbay --version`）覆盖 `/opt/pikbay/pikbay` 后执行 `sudo systemctl restart pikbay`。旧版 `v0.1.0` / `v0.2.0` 配置文件（`version = 1`）无需任何修改即可直接平滑升级至 `v0.3.0`（未显式填写 `[drop]` 段时自动启用安全默认项）。若未来大版本调整了配置结构，`pikbay` 会在启动期直接拒绝启动而绝不修改旧配置文件，换回旧二进制即可立即回退。
 
 ---
 
@@ -304,7 +304,7 @@ pikbay.example.com {
 | `PIKBAY_AUTH_PASSWORD` | — | 可选：环境变量注入明文密码（启动时在内存转为 Argon2id 哈希） |
 | `PIKBAY_AUTH_PASSWORD_HASH` | — | 可选：环境变量注入 Argon2id PHC 哈希字符串 |
 | `pikbay hash-password` | — | 从标准输入读取密码并输出 Argon2id 哈希 |
-| `pikbay --version` / `-V` | — | 打印版本号与内嵌构建提交号（如 `pikbay 0.2.0 (...)`） |
+| `pikbay --version` / `-V` | — | 打印版本号与内嵌构建提交号（如 `pikbay 0.3.0 (...)`） |
 
 ### 从源码编译与全量质量门禁
 
@@ -352,7 +352,7 @@ npm run e2e
 - 检查书签 `icon` 字段仅填写纯文件名（如 `"jellyfin.svg"`，仅允许字母、数字、`.`、`_`、`-`，扩展名限 `svg / png / webp / ico`，拒绝子目录与符号链接），并确认运行账号对该文件有读权限。
 
 **3. 为什么 `/drop` 有时显示“WebRTC 局域网直连”，有时切换为“零存储密文流中继”？**
-- 当两台设备处于开启了 AP 隔离的无线网络、跨子网防火墙或对称 NAT 下，浏览器在 3 秒内无法直接打通局域网点对点连接时，`/drop` 会自动将完全相同的 X25519 + ChaCha20-Poly1305 密文分片经由 `/api/drop/ws` 流式透传（单会话上限 `drop.max_relay_mb`，默认 `256 MiB`）。被动转发节点无法解密内容，且数据流过即弃、零字节留存（跨不可信公网使用时可核对双方界面显示的 SAS 校验指纹）。
+- 当两台设备处于开启了 AP 隔离的无线网络、跨子网防火墙或对称 NAT 下，浏览器在 3 秒内无法直接打通局域网点对点连接时，`/drop` 会自动将完全相同的 X25519 + ChaCha20-Poly1305 密文分片经由 `/api/drop/ws` 流式透传（单会话上限 `drop.max_relay_mb`，默认 `256 MiB`）。被动转发节点无法解密内容，且数据流过即弃、零字节留存。
 
 **4. 为什么重启服务后需要重新登录，但测速历史记录还在？**
 - 为保证后端 100% 零磁盘写入，每次启动都会在内存中重新生成 32 字节 CSPRNG 会话签名密钥；而测速历史仅保存在你当前浏览器的 `localStorage` 中，从不上传服务端。

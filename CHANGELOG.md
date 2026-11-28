@@ -2,6 +2,23 @@
 
 All notable changes to `pikbay` are documented in this file. Published release sections are append-only; newer releases are added at the top.
 
+## [0.3.0] - 2026-11-28
+
+### Highlights
+
+- **Tactile Industrial Chassis UI & Typography Overhaul (`web/src/styles`, `web/src/features`, `web/src/ui`)**:
+  - Self-hosts variable `Instrument Sans` and `Martian Mono` WOFF2 fonts inside the single binary (preserving strict `default-src 'none'` CSP and zero external requests) alongside refined 1px specular surface bevels, neutral graphite dark plates, and warm sand-aluminum light plates.
+  - Introduces a cool-sage reflective LCD instrument readout surface in Light mode and ivory recessed input/code wells, paired with a unified single-row hardware status strip across all four workspaces (`Start | Tools | Speed | Drop`), free-standing per-core load bars, and enlarged `30px` sandboxed bookmark icons.
+  - Streamlines `/speedtest` (4 sequential stage indicator lamps, `100ms` oscilloscope ticks with a `~300ms` sliding instantaneous window) and `/drop` (`3 + 3` tactile PIN digit slots and consolidated pairing-code actions).
+- **Authentication, Encrypted Drop & Speedtest Hardening**:
+  - **Immediate WebSocket Session Revocation (`src/auth.rs`, `src/drop.rs`)**: Signing out or reaching `session_ttl_hours` now broadcasts revocation immediately to active `/api/drop/ws` waiting and paired sockets instead of waiting for connection teardown; failed `POST /api/auth/logout` requests surface an explicit error toast without silently re-unlocking cached UI state.
+  - **Long-Lived WebRTC P2P Stability & Backpressure (`web/src/features/drop/session.ts`, `src/drop.rs`)**: Sends periodic signaling keepalives while direct `RTCDataChannel` transfers are active, keeps open direct channels alive across signaling idle timeouts, enforces multi-tick `bufferedamountlow` backpressure (`512 KiB` high-water mark with stall protection), and guards waiting-room cleanup with monotonic room instance IDs.
+  - **Speedtest Request Budgeting, Probe Timeouts & Exact Daily Quotas (`web/src/features/speedtest/engine.ts`, `src/speedtest.rs`)**: Caps per-phase HTTP chunk requests within tight `per_ip_requests_per_minute` budgets (down to `60 RPM`), enforces `5s` per-request deadlines on latency probes and `/api/system` telemetry polls, and rejects final upload chunks that cross `daily_quota_gb` consistently with download reservations.
+- **Toolbox & Storage Isolation Refinements**:
+  - **VFS-Order Zero-Blocking Disk Classification (`src/system/disk.rs`)**: Walks configured disk paths component-by-component from `/` and expands local symlinks before subsequent `..` segments, routing paths that touch remote NFS/SMB/CIFS/SSHFS mounts to the isolated network probe worker without invoking syscalls inside hung remote mounts.
+  - **Lossless `data-convert`, `docker-convert`, `cron` & `timestamp` Upgrades**: Rejects colliding YAML scalar keys (`1` vs `"1"`), unresolved custom YAML tags (`!Ref`), and lossy high-precision non-integer decimals while preserving integer-valued decimals (`9223372036854775807.0`) as exact 64-bit integers; preserves `--entrypoint=""`, warns on `--publish-all` in Compose, maps `--restart on-failure:N` to systemd `StartLimitBurst=N` without injecting `Restart=` when omitted; expands `cron` leap-day lookahead to 40 years; and adds an `Auto / s / ms` unit selector to `timestamp`.
+  - **Startup Log Redaction (`src/config.rs`)**: Redacts literal values in TOML parse errors and omits raw bookmark URLs from startup validation errors so credentials or tokens in mistyped URLs never enter system logs.
+
 ## [0.2.0] - 2026-11-27
 
 ### Highlights

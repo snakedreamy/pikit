@@ -121,7 +121,7 @@ Includes **25 lazy-chunked developer & sysadmin utilities** (architected for 100
 
 | Category | Built-in Tools |
 |---|---|
-| **Encoding & Formats** | `Base64 Codec` (Standard / URL-Safe + binary file import/export), `URL Codec`, `JSON Formatter & Validator` (lossless 64-bit integers + exact line/column error locator), `YAML · JSON · TOML Converter` (three-way config converter & line/col validator), `Timestamp Converter` (auto s/ms, local DST & ISO 8601), `Radix Converter` (`BigInt` base 2–36), `Color Space Converter` (`HEX / RGB / HSL / OKLCH`) |
+| **Encoding & Formats** | `Base64 Codec` (Standard / URL-Safe + binary file import/export), `URL Codec`, `JSON Formatter & Validator` (lossless 64-bit integers + exact line/column error locator), `YAML · JSON · TOML Converter` (three-way config converter & line/col validator), `Timestamp Converter` (`Auto / s / ms`, local DST & ISO 8601), `Radix Converter` (`BigInt` base 2–36), `Color Space Converter` (`HEX / RGB / HSL / OKLCH`) |
 | **Crypto & Tokens** | `Hash Digest` (`SHA-1 / SHA-256 / SHA-384 / SHA-512` & `MD5`), `HMAC Generator`, `Bcrypt Hash & Verifier` (Web Worker cost-adjustable `$2b$` + `.htpasswd` & Caddy `basic_auth`), `Offline Text Encryption` (`PBKDF2-SHA256` + `AES-256-GCM` `PKB1` armor), `UUID v4 / v7 Generator`, `Password & Token Generator` (rejection-sampled CSPRNG + Shannon entropy), `JWT Offline Inspector`, `TOTP Generator` (RFC 6238 Base32 & `otpauth://` with Previous / Current / Next windows) |
 | **Text, Diff & Web** | `Text & File Diff` (dual file drop, NUL-byte binary SHA-256 check, Split/Unified views, collapsible context & trailing-space toggle), `Regex Tester` (capture table + Web Worker 800ms ReDoS timeout), `Text Stats & Case Converter` (graphemes, code points, UTF-8/UTF-16 sizes, CJK & words, `LF/CRLF` detection, reading time, token frequency & 9 naming styles), `URL Parser & Builder` (interactive Query parameter table & live URL reconstruction), `Device & Browser Inspector` (physical pixels, live `Hz` refresh rate, Client Hints, WebGL/WebGPU renderer, 1080p60 hardware codec matrix & Markdown/JSON report) |
 | **Network & Ops** | `IPv4 / IPv6 Subnet Calculator` (`BigInt` CIDR math, RFC 3021 `/31` & RFC 5952 compression), `Chmod Calculator` (POSIX `rwx` + `SUID / SGID / Sticky` matrix ↔ octal/symbolic/CLI), `Docker / Quadlet Converter` (`docker/podman run` → `compose.yaml` & Podman `.container` Quadlet), `Cron Parser` (5/6-field Vixie Cron + next 8 local runs), `QR Code Generator` (`SVG` & `PNG` export) |
@@ -140,7 +140,7 @@ Download the archive for your platform (`x86_64-unknown-linux-musl`, `aarch64-un
 
 ```bash
 # Example for Linux x86_64 (replace with aarch64-unknown-linux-musl on ARM64 SBCs/servers)
-VERSION="v0.2.0"
+VERSION="v0.3.0"
 ARCH="x86_64-unknown-linux-musl"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/pikbay-${VERSION}-${ARCH}.tar.gz"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/SHA256SUMS.txt"
@@ -200,7 +200,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/api/meta
 ```
 
-- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. Existing `v0.1.0` `config.toml` files (`version = 1`) work with `v0.2.0` without modification (`[drop]` defaults apply automatically). If a future major release ever changes `version`, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
+- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. Existing `v0.1.0` and `v0.2.0` `config.toml` files (`version = 1`) work with `v0.3.0` without modification (`[drop]` defaults apply automatically). If a future major release ever changes `version`, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
 
 ---
 
@@ -304,7 +304,7 @@ For **Nginx**, forward `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host
 | `PIKBAY_AUTH_PASSWORD` | — | Optional plaintext password injected via environment (hashed into Argon2id in memory at startup) |
 | `PIKBAY_AUTH_PASSWORD_HASH` | — | Optional Argon2id PHC hash string injected via environment |
 | `pikbay hash-password` | — | Reads a password line from `stdin` and outputs an Argon2id PHC hash |
-| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.2.0 (...)`) |
+| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.3.0 (...)`) |
 
 ### Building & Verifying from Source
 
@@ -352,7 +352,7 @@ npm run e2e
 - Verify `icon` contains only the filename (e.g., `"jellyfin.svg"`—ASCII alphanumeric, `.`, `_`, `-`, with extension `.svg`, `.png`, `.webp`, or `.ico`; subdirectories and symlinks are rejected) and that the service user has read permissions on the file.
 
 **3. Why did `/drop` switch from `WebRTC P2P Direct` to `Zero-Storage WS Relay`?**
-- When Wi-Fi AP client isolation, symmetric NAT, container bridge networking, or cross-VLAN firewall rules prevent direct browser-to-browser UDP/TCP connectivity within 3 seconds, `/drop` automatically streams the exact same X25519 + ChaCha20-Poly1305 AEAD ciphertext chunks through `/api/drop/ws` (up to `drop.max_relay_mb`, default `256 MiB`). Passive relays never see plaintext, filenames, or keys, and `pikbay` retains zero bytes in memory once chunks pass through (across untrusted networks, compare the SAS fingerprint displayed on both devices).
+- When Wi-Fi AP client isolation, symmetric NAT, container bridge networking, or cross-VLAN firewall rules prevent direct browser-to-browser UDP/TCP connectivity within 3 seconds, `/drop` automatically streams the exact same X25519 + ChaCha20-Poly1305 AEAD ciphertext chunks through `/api/drop/ws` (up to `drop.max_relay_mb`, default `256 MiB`). Passive relays never see plaintext, filenames, or keys, and `pikbay` retains zero bytes in memory once chunks pass through.
 
 **4. Why do sessions sign out after restarting `pikbay`, while speedtest history persists?**
 - To guarantee zero disk writes, `pikbay` generates a fresh 256-bit CSPRNG HMAC signing key in RAM on every startup. Speedtest history lives exclusively in your browser's `localStorage`.
