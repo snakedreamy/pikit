@@ -140,7 +140,7 @@
 
 ```bash
 # 以 Linux x86_64 为例（ARM64 设备请改为 aarch64-unknown-linux-musl）
-VERSION="v0.3.0"
+VERSION="v0.3.1"
 ARCH="x86_64-unknown-linux-musl"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/pikbay-${VERSION}-${ARCH}.tar.gz"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/SHA256SUMS.txt"
@@ -200,7 +200,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/api/meta
 ```
 
-- **升级与无损回退**：下载或编译新二进制（`./pikbay --version`）覆盖 `/opt/pikbay/pikbay` 后执行 `sudo systemctl restart pikbay`。旧版 `v0.1.0` / `v0.2.0` 配置文件（`version = 1`）无需任何修改即可直接平滑升级至 `v0.3.0`（未显式填写 `[drop]` 段时自动启用安全默认项）。若未来大版本调整了配置结构，`pikbay` 会在启动期直接拒绝启动而绝不修改旧配置文件，换回旧二进制即可立即回退。
+- **升级与无损回退**：下载或编译新二进制（`./pikbay --version`）覆盖 `/opt/pikbay/pikbay` 后执行 `sudo systemctl restart pikbay`。旧版 `v0.1.0` / `v0.2.0` 配置文件（`version = 1`）无需任何修改即可直接平滑升级至 `v0.3.1`（未显式填写 `[drop]` 段时自动启用安全默认项）。若未来大版本调整了配置结构，`pikbay` 会在启动期直接拒绝启动而绝不修改旧配置文件，换回旧二进制即可立即回退。
 
 ---
 
@@ -304,7 +304,7 @@ pikbay.example.com {
 | `PIKBAY_AUTH_PASSWORD` | — | 可选：环境变量注入明文密码（启动时在内存转为 Argon2id 哈希） |
 | `PIKBAY_AUTH_PASSWORD_HASH` | — | 可选：环境变量注入 Argon2id PHC 哈希字符串 |
 | `pikbay hash-password` | — | 从标准输入读取密码并输出 Argon2id 哈希 |
-| `pikbay --version` / `-V` | — | 打印版本号与内嵌构建提交号（如 `pikbay 0.3.0 (...)`） |
+| `pikbay --version` / `-V` | — | 打印版本号与内嵌构建提交号（如 `pikbay 0.3.1 (...)`） |
 
 ### 从源码编译与全量质量门禁
 

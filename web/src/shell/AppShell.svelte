@@ -275,7 +275,7 @@
         {meta.title} v{meta.version}{meta.commit ? ` · ${meta.commit}` : ''}
       </span>
     {:else}
-      <span>pikbay v0.3.0</span>
+      <span>pikbay v0.3.1</span>
     {/if}
   </footer>
 </div>

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -127,18 +127,26 @@ pub fn sample_disks_scoped(
     discover_and_sample_disks(scope)
 }
 
-enum PathStep {
+enum PosixStep {
     Parent,
-    Normal(std::ffi::OsString),
+    Normal(String),
 }
 
-fn push_path_steps_front(path: &Path, queue: &mut std::collections::VecDeque<PathStep>) {
-    let steps: Vec<PathStep> = path
-        .components()
-        .filter_map(|c| match c {
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
-            Component::ParentDir => Some(PathStep::Parent),
-            Component::Normal(s) => Some(PathStep::Normal(s.to_os_string())),
+fn format_posix_path(stack: &[String]) -> String {
+    if stack.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", stack.join("/"))
+    }
+}
+
+fn push_posix_steps_front(raw: &str, queue: &mut std::collections::VecDeque<PosixStep>) {
+    let steps: Vec<PosixStep> = raw
+        .split('/')
+        .filter_map(|seg| match seg {
+            "" | "." => None,
+            ".." => Some(PosixStep::Parent),
+            s => Some(PosixStep::Normal(s.to_string())),
         })
         .collect();
     for step in steps.into_iter().rev() {
@@ -149,7 +157,7 @@ fn push_path_steps_front(path: &Path, queue: &mut std::collections::VecDeque<Pat
 /// Classifies whether `raw_path` targets or traverses a network mount in exact kernel VFS order
 /// without ever invoking syscalls inside a remote filesystem: resolves symlinks before subsequent
 /// `..` segments while on local mounts, and returns `true` the instant resolution touches a network
-/// mount prefix in `mountinfo`.
+/// mount prefix in `mountinfo`. Uses pure POSIX `/` formatting so unit tests behave identically on Windows.
 fn is_configured_path_on_network_mount_with<F>(
     mountinfo: &str,
     raw_path: &str,
@@ -158,52 +166,53 @@ fn is_configured_path_on_network_mount_with<F>(
 where
     F: FnMut(&Path) -> Option<PathBuf>,
 {
+    if mountinfo.trim().is_empty() {
+        return false;
+    }
     if is_path_on_network_mount(mountinfo, "/") {
         return true;
     }
 
-    let mut resolved = PathBuf::from("/");
+    let mut stack: Vec<String> = Vec::new();
     let mut queue = std::collections::VecDeque::new();
-    push_path_steps_front(Path::new(raw_path), &mut queue);
+    push_posix_steps_front(raw_path, &mut queue);
     let mut symlink_hops = 0usize;
 
     while let Some(step) = queue.pop_front() {
         match step {
-            PathStep::Parent => {
-                resolved.pop();
-                if resolved.as_os_str().is_empty() {
-                    resolved.push("/");
-                }
-                if is_path_on_network_mount(mountinfo, &resolved.to_string_lossy()) {
+            PosixStep::Parent => {
+                stack.pop();
+                let cur = format_posix_path(&stack);
+                if is_path_on_network_mount(mountinfo, &cur) {
                     return true;
                 }
             }
-            PathStep::Normal(seg) => {
-                resolved.push(&seg);
-                if is_path_on_network_mount(mountinfo, &resolved.to_string_lossy()) {
+            PosixStep::Normal(seg) => {
+                stack.push(seg);
+                let cur = format_posix_path(&stack);
+                if is_path_on_network_mount(mountinfo, &cur) {
                     return true;
                 }
 
-                if let Some(link_target) = read_link_fn(&resolved) {
+                if let Some(link_target) = read_link_fn(Path::new(&cur)) {
                     symlink_hops += 1;
                     if symlink_hops > MAX_SYMLINK_HOPS {
                         return false;
                     }
-                    if link_target.is_absolute() {
-                        resolved = PathBuf::from("/");
+                    let target_posix = link_target.to_string_lossy().replace('\\', "/");
+                    if target_posix.starts_with('/') {
+                        stack.clear();
                     } else {
-                        resolved.pop();
-                        if resolved.as_os_str().is_empty() {
-                            resolved.push("/");
-                        }
+                        stack.pop();
                     }
-                    push_path_steps_front(&link_target, &mut queue);
+                    push_posix_steps_front(&target_posix, &mut queue);
                 }
             }
         }
     }
 
-    is_path_on_network_mount(mountinfo, &resolved.to_string_lossy())
+    let final_path = format_posix_path(&stack);
+    is_path_on_network_mount(mountinfo, &final_path)
 }
 
 fn is_path_on_network_mount(mountinfo: &str, target_path: &str) -> bool {

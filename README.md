@@ -140,7 +140,7 @@ Download the archive for your platform (`x86_64-unknown-linux-musl`, `aarch64-un
 
 ```bash
 # Example for Linux x86_64 (replace with aarch64-unknown-linux-musl on ARM64 SBCs/servers)
-VERSION="v0.3.0"
+VERSION="v0.3.1"
 ARCH="x86_64-unknown-linux-musl"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/pikbay-${VERSION}-${ARCH}.tar.gz"
 curl -fLO "https://github.com/snakedreamy/pikbay/releases/download/${VERSION}/SHA256SUMS.txt"
@@ -200,7 +200,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/api/meta
 ```
 
-- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. Existing `v0.1.0` and `v0.2.0` `config.toml` files (`version = 1`) work with `v0.3.0` without modification (`[drop]` defaults apply automatically). If a future major release ever changes `version`, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
+- **Upgrading & Rollback**: Replace `/opt/pikbay/pikbay` with the new binary (`./pikbay --version`) and run `sudo systemctl restart pikbay`. Existing `v0.1.0` and `v0.2.0` `config.toml` files (`version = 1`) work with `v0.3.1` without modification (`[drop]` defaults apply automatically). If a future major release ever changes `version`, `pikbay` refuses to start rather than mutating your file in place, allowing instant rollback by restoring the previous binary.
 
 ---
 
@@ -304,7 +304,7 @@ For **Nginx**, forward `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host
 | `PIKBAY_AUTH_PASSWORD` | — | Optional plaintext password injected via environment (hashed into Argon2id in memory at startup) |
 | `PIKBAY_AUTH_PASSWORD_HASH` | — | Optional Argon2id PHC hash string injected via environment |
 | `pikbay hash-password` | — | Reads a password line from `stdin` and outputs an Argon2id PHC hash |
-| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.3.0 (...)`) |
+| `pikbay --version` / `-V` | — | Prints version and embedded Git commit (`pikbay 0.3.1 (...)`) |
 
 ### Building & Verifying from Source
 

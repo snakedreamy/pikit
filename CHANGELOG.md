@@ -2,6 +2,14 @@
 
 All notable changes to `pikbay` are documented in this file. Published release sections are append-only; newer releases are added at the top.
 
+## [0.3.1] - 2026-11-28
+
+### Fixes
+
+- **Cross-Platform Windows Release Test & Atomic Container Publishing (`src/system/disk.rs`, `.github/workflows/release.yml`)**:
+  - Switches `/proc/self/mountinfo` VFS symlink traversal in `src/system/disk.rs` to pure POSIX `/` segment operations so unit tests execute identically on `x86_64-pc-windows-msvc` without Windows `PathBuf` separator or drive-prefix divergence.
+  - Requires all cross-platform binary builds and test suites (`build-binaries`) to succeed before publishing multi-architecture `ghcr.io` container tags in `release.yml`.
+
 ## [0.3.0] - 2026-11-28
 
 ### Highlights

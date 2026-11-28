@@ -1,6 +1,6 @@
 [package]
 name = "pikbay"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Self-hosted single-binary personal startpage, real-time speedtest, local-only IT toolbox, and peer-to-peer encrypted drop"
 license = "AGPL-3.0-only"
