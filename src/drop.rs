@@ -49,6 +49,7 @@ const MAX_PAIRED_SESSION_DURATION: Duration = Duration::from_secs(1800);
 const MAX_TRACKED_DROP_IPS: usize = 16_384;
 
 struct WaitingRoom {
+    id: u64,
     expires_at: Instant,
     sender_pub_key: String,
     sender_salt: String,
@@ -105,6 +106,7 @@ pub struct DropService {
     rate_limiter: DefaultKeyedRateLimiter<IpAddr>,
     handshake_sem: Arc<Semaphore>,
     room_sem: Arc<Semaphore>,
+    next_room_id: AtomicU64,
     rooms: Mutex<HashMap<String, WaitingRoom>>,
 }
 
@@ -119,6 +121,7 @@ impl DropService {
             rate_limiter: RateLimiter::keyed(quota),
             handshake_sem: Arc::new(Semaphore::new(max_rooms.saturating_mul(2).max(16))),
             room_sem: Arc::new(Semaphore::new(max_rooms)),
+            next_room_id: AtomicU64::new(1),
             rooms: Mutex::new(HashMap::new()),
         }
     }
@@ -164,7 +167,7 @@ impl DropService {
         &self,
         sender_pub_key: String,
         sender_salt: String,
-    ) -> Option<(String, Instant, oneshot::Receiver<JoinedPeerBundle>)> {
+    ) -> Option<(String, u64, Instant, oneshot::Receiver<JoinedPeerBundle>)> {
         let now = Instant::now();
         {
             let mut guard = self.rooms.lock().expect("drop rooms mutex poisoned");
@@ -175,6 +178,7 @@ impl DropService {
         let ttl = Duration::from_secs(self.cfg.code_ttl_seconds);
         let expires_at = now + ttl;
         let (join_tx, join_rx) = oneshot::channel();
+        let room_id = self.next_room_id.fetch_add(1, Ordering::Relaxed);
 
         let mut guard = self.rooms.lock().expect("drop rooms mutex poisoned");
         let mut selected_code: Option<String> = None;
@@ -191,6 +195,7 @@ impl DropService {
         guard.insert(
             code.clone(),
             WaitingRoom {
+                id: room_id,
                 expires_at,
                 sender_pub_key,
                 sender_salt,
@@ -199,12 +204,14 @@ impl DropService {
             },
         );
 
-        Some((code, expires_at, join_rx))
+        Some((code, room_id, expires_at, join_rx))
     }
 
-    fn remove_waiting_room(&self, code: &str) {
+    fn remove_waiting_room(&self, code: &str, room_id: u64) {
         if let Ok(mut guard) = self.rooms.lock() {
-            guard.remove(code);
+            if guard.get(code).is_some_and(|room| room.id == room_id) {
+                guard.remove(code);
+            }
         }
     }
 
@@ -535,7 +542,8 @@ async fn handle_drop_socket(
                 return;
             }
 
-            let Some((code, expires_at, mut join_rx)) = svc.create_waiting_room(pub_key, salt)
+            let Some((code, room_id, expires_at, mut join_rx)) =
+                svc.create_waiting_room(pub_key, salt)
             else {
                 warn!(
                     client_ip = %client_ip,
@@ -561,14 +569,14 @@ async fn handle_drop_socket(
             .await
             .is_err()
             {
-                svc.remove_waiting_room(&code);
+                svc.remove_waiting_room(&code, room_id);
                 return;
             }
 
             let joined = loop {
                 tokio::select! {
                     _ = wait_session_invalidated(&mut auth_lease) => {
-                        svc.remove_waiting_room(&code);
+                        svc.remove_waiting_room(&code, room_id);
                         send_error_and_close(&mut socket, "unauthorized", "Session expired or logged out").await;
                         return;
                     }
@@ -576,14 +584,14 @@ async fn handle_drop_socket(
                         match res {
                             Ok(bundle) => break bundle,
                             Err(_) => {
-                                svc.remove_waiting_room(&code);
+                                svc.remove_waiting_room(&code, room_id);
                                 send_error_and_close(&mut socket, "cancelled", "Pairing room closed").await;
                                 return;
                             }
                         }
                     }
                     _ = tokio::time::sleep_until(expires_at.into()) => {
-                        svc.remove_waiting_room(&code);
+                        svc.remove_waiting_room(&code, room_id);
                         send_error_and_close(&mut socket, "expired", "Pairing code expired").await;
                         return;
                     }
@@ -594,14 +602,14 @@ async fn handle_drop_socket(
                                     .await
                                     .is_err()
                                 {
-                                    svc.remove_waiting_room(&code);
+                                    svc.remove_waiting_room(&code, room_id);
                                     return;
                                 }
                             }
                             Some(Ok(Message::Pong(_))) => {}
                             _ => {
                                 // Sender cancelled, disconnected, or sent an unexpected frame before pairing: destroy room immediately
-                                svc.remove_waiting_room(&code);
+                                svc.remove_waiting_room(&code, room_id);
                                 let _ = send_ws_bounded(&mut socket, Message::Close(None), Duration::from_secs(3)).await;
                                 return;
                             }
@@ -1265,5 +1273,39 @@ password = "super-secret-password"
             .await;
         let join_res = joiner.recv_json().await;
         assert_eq!(join_res["code"], "invalid_or_expired");
+    }
+
+    #[test]
+    fn stale_waiting_room_cleanup_does_not_evict_reassigned_code() {
+        let cfg = Config::from_toml_str("version = 1\n").unwrap();
+        let svc = DropService::new(&cfg.drop);
+
+        let (code, old_id, _exp, _rx) = svc
+            .create_waiting_room("pub1".to_string(), "salt1".to_string())
+            .unwrap();
+        assert!(svc.claim_waiting_room(&code).is_some());
+
+        // Simulate a newly allocated room reusing the same 6-digit code before the old task finishes cleanup
+        let new_permit = Arc::clone(&svc.room_sem).try_acquire_owned().unwrap();
+        let (new_tx, _new_rx) = oneshot::channel();
+        let new_id = svc.next_room_id.fetch_add(1, Ordering::Relaxed);
+        svc.rooms.lock().unwrap().insert(
+            code.clone(),
+            WaitingRoom {
+                id: new_id,
+                expires_at: Instant::now() + Duration::from_secs(60),
+                sender_pub_key: "pub2".to_string(),
+                sender_salt: "salt2".to_string(),
+                join_tx: new_tx,
+                room_permit: new_permit,
+            },
+        );
+
+        // Stale cleanup with `old_id` must leave `new_id` untouched
+        svc.remove_waiting_room(&code, old_id);
+        assert!(svc.rooms.lock().unwrap().contains_key(&code));
+
+        svc.remove_waiting_room(&code, new_id);
+        assert!(!svc.rooms.lock().unwrap().contains_key(&code));
     }
 }

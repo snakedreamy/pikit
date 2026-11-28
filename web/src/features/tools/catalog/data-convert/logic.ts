@@ -420,6 +420,9 @@ function parseYamlLossless(source: string, lineCounter: LineCounter): unknown {
   if (doc.errors.length > 0) {
     throw doc.errors[0];
   }
+  if (doc.warnings.length > 0) {
+    throw doc.warnings[0];
+  }
 
   const walkAst = (node: unknown) => {
     if (!node) return;

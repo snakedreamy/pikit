@@ -47,6 +47,48 @@ pub enum ConfigError {
     Validation(String),
 }
 
+fn redact_toml_error_message(raw: &str) -> String {
+    // Strip double-quoted string literals (`invalid type: string "secret"`) while preserving schema field names
+    let mut pass1 = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '"' {
+            let mut escaped = false;
+            for inner in chars.by_ref() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if inner == '\\' {
+                    escaped = true;
+                } else if inner == '"' {
+                    break;
+                }
+            }
+            pass1.push_str("\"<redacted>\"");
+        } else {
+            pass1.push(ch);
+        }
+    }
+
+    // Also redact scalar literals in `integer \`...\`` / `floating point \`...\`` type errors while keeping ``unknown field `foo` `` intact
+    let mut out = pass1;
+    for prefix in ["integer `", "floating point `", "byte array `"] {
+        while let Some(start) = out.find(prefix) {
+            let val_start = start + prefix.len();
+            let Some(rel_end) = out[val_start..].find('`') else {
+                break;
+            };
+            let end = val_start + rel_end;
+            if &out[val_start..end] == "<redacted>" {
+                break;
+            }
+            out.replace_range(val_start..end, "<redacted>");
+        }
+    }
+    out
+}
+
 fn sanitize_toml_error(input: &str, err: &toml::de::Error) -> ConfigError {
     let location = if let Some(span) = err.span() {
         let safe_idx = span.start.min(input.len());
@@ -61,10 +103,10 @@ fn sanitize_toml_error(input: &str, err: &toml::de::Error) -> ConfigError {
     } else {
         "unknown location".to_string()
     };
-    // Report only the error category and line/column; never echo raw source lines that might contain passwords or hashes
+    // Report only the error category and line/column; never echo raw values that might contain passwords, tokens, or URLs
     ConfigError::ParseToml {
         location,
-        message: err.message().to_string(),
+        message: redact_toml_error_message(err.message()),
     }
 }
 
@@ -438,26 +480,21 @@ impl Config {
         }
 
         let listen_addr: SocketAddr = raw.server.listen.parse().map_err(|e| {
-            ConfigError::Validation(format!(
-                "server.listen `{}` is not a valid socket address: {e}",
-                raw.server.listen
-            ))
+            ConfigError::Validation(format!("server.listen is not a valid socket address: {e}"))
         })?;
 
         let mut trusted_proxies = Vec::with_capacity(raw.server.trusted_proxies.len());
-        for cidr in &raw.server.trusted_proxies {
+        for (idx, cidr) in raw.server.trusted_proxies.iter().enumerate() {
             let net = IpNet::parse(cidr).map_err(|e| {
-                ConfigError::Validation(format!("server.trusted_proxies `{cidr}` is invalid: {e}"))
+                ConfigError::Validation(format!("server.trusted_proxies[{idx}] is invalid: {e}"))
             })?;
             trusted_proxies.push(net);
         }
 
         let mut allowed_hosts = Vec::with_capacity(raw.server.allowed_hosts.len());
-        for raw_host in &raw.server.allowed_hosts {
+        for (idx, raw_host) in raw.server.allowed_hosts.iter().enumerate() {
             let normalized = normalize_allowed_host(raw_host).map_err(|reason| {
-                ConfigError::Validation(format!(
-                    "server.allowed_hosts `{raw_host}` is invalid: {reason}"
-                ))
+                ConfigError::Validation(format!("server.allowed_hosts[{idx}] is invalid: {reason}"))
             })?;
             allowed_hosts.push(normalized);
         }
@@ -486,8 +523,7 @@ impl Config {
         for (idx, disk) in raw.system.disks.iter().enumerate() {
             if !Path::new(&disk.path).is_absolute() {
                 return Err(ConfigError::Validation(format!(
-                    "system.disks[{idx}].path `{}` must be an absolute path",
-                    disk.path
+                    "system.disks[{idx}].path must be an absolute path"
                 )));
             }
             let label_len = disk.label.trim().chars().count();
@@ -746,8 +782,7 @@ fn normalize_and_validate_bookmark(
 
     validate_http_url(&item.url).map_err(|reason| {
         ConfigError::Validation(format!(
-            "groups[{g_idx}].items[{i_idx}].url `{}` is invalid: {reason}",
-            item.url
+            "groups[{g_idx}].items[{i_idx}].url is invalid: {reason}"
         ))
     })?;
 
@@ -757,7 +792,7 @@ fn normalize_and_validate_bookmark(
             let filename = trimmed.strip_prefix("file:").unwrap_or(trimmed);
             if !is_safe_icon_filename(filename) {
                 return Err(ConfigError::Validation(format!(
-                    "groups[{g_idx}].items[{i_idx}].icon `{raw_icon}` is invalid: custom icon filenames allow only ASCII letters, digits, `.`, `_`, `-` with extension svg/png/webp/ico (no path traversal)"
+                    "groups[{g_idx}].items[{i_idx}].icon is invalid: custom icon filenames allow only ASCII letters, digits, `.`, `_`, `-` with extension svg/png/webp/ico (no path traversal)"
                 )));
             }
             item.icon = Some(filename.to_string());
@@ -958,11 +993,16 @@ password_hash = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ"
 "#;
         assert!(Config::from_toml_str(incomplete_phc).is_err());
 
-        // Syntax errors must report line/column without echoing raw lines containing secrets
+        // Syntax and type errors must report line/column without echoing raw values containing secrets
         let malformed = "version = 1\n[auth]\npassword = \"SuperSecretLeak999\" bad_tail\n";
         let msg = Config::from_toml_str(malformed).unwrap_err().to_string();
         assert!(!msg.contains("SuperSecretLeak999"));
         assert!(msg.contains("line 3"));
+
+        let wrong_type = "version = 1\n[auth]\nenabled = \"TypeSecretLeak888\"\n";
+        let type_msg = Config::from_toml_str(wrong_type).unwrap_err().to_string();
+        assert!(!type_msg.contains("TypeSecretLeak888"));
+        assert!(type_msg.contains("<redacted>"));
     }
 
     #[test]
@@ -1015,6 +1055,21 @@ icon = "../etc/passwd"
         assert!(Config::from_toml_str(bad_icon).is_err());
         assert!(!is_safe_icon_filename(".hidden.svg"));
         assert!(!is_safe_icon_filename("script.js"));
+
+        // Invalid bookmark URLs must not echo embedded credentials or query tokens in startup logs
+        let bad_url_with_token = r#"
+version = 1
+[[groups]]
+name = "Lab"
+[[groups.items]]
+name = "Panel"
+url = "https://admin:UrlSecretToken777@panel.local/ space"
+"#;
+        let url_err = Config::from_toml_str(bad_url_with_token)
+            .unwrap_err()
+            .to_string();
+        assert!(!url_err.contains("UrlSecretToken777"));
+        assert!(url_err.contains("groups[0].items[0].url"));
     }
 
     #[test]

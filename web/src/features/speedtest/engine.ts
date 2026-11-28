@@ -29,6 +29,7 @@ export interface SpeedtestProgress {
 
 export interface SpeedtestOptions {
   pingCount?: number;
+  pingTimeoutMs?: number;
   parallelStreams?: number;
   maxDownloadMb?: number;
   maxUploadMb?: number;
@@ -91,6 +92,34 @@ export function sliceUploadBlob(unitMiBBlob: Blob, targetBytes: number): Blob {
 
 function nonce(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const DEFAULT_PING_TIMEOUT_MS = 5_000;
+
+function createTimedRequestSignal(
+  parent: AbortSignal,
+  timeoutMs: number
+): { signal: AbortSignal; didTimeout: () => boolean; cleanup: () => void } {
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const onParentAbort = () => ctrl.abort();
+  if (parent.aborted) {
+    ctrl.abort();
+  } else {
+    parent.addEventListener('abort', onParentAbort, { once: true });
+  }
+  const timer = globalThis.setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeoutMs);
+  return {
+    signal: ctrl.signal,
+    didTimeout: () => timedOut && !parent.aborted,
+    cleanup: () => {
+      globalThis.clearTimeout(timer);
+      parent.removeEventListener('abort', onParentAbort);
+    },
+  };
 }
 
 export async function runSpeedtestSession(
@@ -160,16 +189,28 @@ export async function runSpeedtestSession(
   };
 
   // ==================== 1. Latency & jitter ====================
+  const pingTimeoutMs = Math.max(10, Math.floor(opts.pingTimeoutMs ?? DEFAULT_PING_TIMEOUT_MS));
   emit();
   const rtts: number[] = [];
   for (let i = 0; i < pingCount; i += 1) {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
     const t0 = performance.now();
-    const res = await fetch(`/api/speed/ping?r=${nonce()}`, {
-      method: 'GET',
-      cache: 'no-store',
-      signal,
-    });
+    const probe = createTimedRequestSignal(signal, pingTimeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(`/api/speed/ping?r=${nonce()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: probe.signal,
+      });
+    } catch (err) {
+      if (probe.didTimeout()) {
+        throw new SpeedtestRunError('network', 'Latency probe timed out');
+      }
+      throw err;
+    } finally {
+      probe.cleanup();
+    }
     checkStatus(res.status);
     const rtt = performance.now() - t0;
     rtts.push(rtt);

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { t } from '../../../../lib/i18n/index.svelte';
-  import { Button, CopyButton, Field, Input } from '../../../../ui';
-  import { parseFlexibleTimestamp } from './logic';
+  import { Button, CopyButton, Field, Input, Segmented } from '../../../../ui';
+  import { parseFlexibleTimestamp, type TimestampInputMode } from './logic';
 
   const NS = 'tool:timestamp';
 
   let raw = $state(String(Math.floor(Date.now() / 1000)));
-  const parsed = $derived(parseFlexibleTimestamp(raw));
+  let mode = $state<TimestampInputMode>('auto');
+  const parsed = $derived(parseFlexibleTimestamp(raw, mode));
 </script>
 
 <div class="ts-bench">
@@ -20,7 +21,21 @@
         <Input id="pk-ts-in" bind:value={raw} mono invalid={Boolean(raw.trim() && !parsed)} />
       </Field>
     </div>
-    <Button variant="secondary" onclick={() => (raw = String(Date.now()))}>
+    <Segmented
+      value={mode}
+      ariaLabel={t('unitAria', undefined, NS)}
+      options={[
+        { value: 'auto', label: t('unitAuto', undefined, NS) },
+        { value: 's', label: t('unitSec', undefined, NS) },
+        { value: 'ms', label: t('unitMs', undefined, NS) },
+      ]}
+      onchange={(v) => (mode = v as TimestampInputMode)}
+    />
+    <Button
+      variant="secondary"
+      onclick={() =>
+        (raw = mode === 's' ? String(Math.floor(Date.now() / 1000)) : String(Date.now()))}
+    >
       {t('useNow', undefined, NS)}
     </Button>
   </div>

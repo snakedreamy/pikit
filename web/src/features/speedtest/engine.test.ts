@@ -252,4 +252,35 @@ describe('speedtest engine upload drain', () => {
     expect(upCalls).toBeGreaterThan(0);
     expect(pingCalls + downCalls + upCalls).toBeLessThanOrEqual(60);
   });
+
+  it('aborts hung latency probes with a network SpeedtestRunError instead of stalling indefinitely', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true }
+          );
+        });
+      })
+    );
+
+    if (typeof globalThis.window === 'undefined') {
+      vi.stubGlobal('window', globalThis);
+    }
+
+    const ctrl = new AbortController();
+    await expect(
+      runSpeedtestSession(
+        {
+          pingCount: 2,
+          pingTimeoutMs: 35,
+          onProgress: () => {},
+        },
+        ctrl.signal
+      )
+    ).rejects.toMatchObject({ kind: 'network' });
+  });
 });

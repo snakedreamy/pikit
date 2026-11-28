@@ -511,7 +511,7 @@ function renderComposeYaml(p: ParsedContainerRun, parsedMounts: readonly ParsedM
   if (p.user) lines.push(`    user: ${JSON.stringify(p.user)}`);
   if (p.hostname) lines.push(`    hostname: ${yamlScalar(p.hostname)}`);
   if (p.workdir) lines.push(`    working_dir: ${yamlScalar(p.workdir)}`);
-  if (p.entrypoint) lines.push(`    entrypoint: ${JSON.stringify(p.entrypoint)}`);
+  if (p.entrypoint !== undefined) lines.push(`    entrypoint: ${JSON.stringify(p.entrypoint)}`);
   if (p.readOnly) lines.push('    read_only: true');
   if (p.init) lines.push('    init: true');
   if (p.privileged) lines.push('    privileged: true');
@@ -648,7 +648,7 @@ function systemdEscapeValue(fieldName: string, v: string): string {
   if (v.includes('\0')) {
     throw new Error(`NUL character is not permitted in ${fieldName}`);
   }
-  if (!/[\s"'\\]/.test(v)) {
+  if (v.length > 0 && !/[\s"'\\]/.test(v)) {
     return v;
   }
   let escaped = '"';
@@ -734,7 +734,7 @@ function renderPodmanQuadlet(
   if (p.network) lines.push(`Network=${assertSafeQuadletToken('--network', p.network)}`);
   if (p.hostname) lines.push(`HostName=${assertSafeQuadletToken('--hostname', p.hostname)}`);
   if (p.workdir) lines.push(`WorkingDir=${assertSafeQuadletToken('--workdir', p.workdir)}`);
-  if (p.entrypoint) {
+  if (p.entrypoint !== undefined) {
     lines.push(`Entrypoint=${systemdEscapeValue('--entrypoint', p.entrypoint)}`);
   }
 
@@ -840,6 +840,11 @@ export function convertDockerRun(
     }
     const parsed = parseContainerRunTokens(tokens);
     const warnings = [...parsed.warnings];
+    if (parsed.publishAll) {
+      warnings.push(
+        'Docker Compose has no equivalent for -P / --publish-all; declare explicit host:container port mappings under ports: in compose.yaml.'
+      );
+    }
     const parsedMounts = parsed.mounts.map(parseDockerMountSpec);
     const quadletUnit = renderPodmanQuadlet(parsed, options, warnings);
     const composeYaml = renderComposeYaml(parsed, parsedMounts);

@@ -16,6 +16,12 @@ describe('timestamp converter logic', () => {
     const fromIso = parseFlexibleTimestamp('2023-11-14T22:13:20Z')!;
     expect(fromIso.detectedUnit).toBe('date');
     expect(fromIso.epochSec).toBe(1700000000);
+
+    // Explicit `ms` mode disambiguates early-1970 millisecond values (< 1e11) such as 1970-01-02T00:00:00Z
+    const dayTwo = parseFlexibleTimestamp('1970-01-02T00:00:00Z')!;
+    expect(dayTwo.epochMs).toBe(86400000);
+    const roundTripMs = parseFlexibleTimestamp(String(dayTwo.epochMs), 'ms')!;
+    expect(roundTripMs.isoUtc).toBe('1970-01-02T00:00:00.000Z');
   });
 
   it('returns null on invalid date strings and impossible calendar rollovers', () => {

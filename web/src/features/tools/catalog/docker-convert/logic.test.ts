@@ -122,5 +122,16 @@ describe('docker run / podman run -> compose.yaml & Podman Quadlet converter', (
       expect(boundedRetry.quadletUnit).toContain('StartLimitBurst=3');
       expect(boundedRetry.warnings.length).toBeGreaterThan(0);
     }
+
+    const emptyEntryAndPubAll = convertDockerRun(
+      'docker run -P --entrypoint="" nginx:alpine /bin/true'
+    );
+    expect(emptyEntryAndPubAll.ok).toBe(true);
+    if (emptyEntryAndPubAll.ok) {
+      expect(emptyEntryAndPubAll.composeYaml).toContain('entrypoint: ""');
+      expect(emptyEntryAndPubAll.quadletUnit).toContain('Entrypoint=""');
+      expect(emptyEntryAndPubAll.quadletUnit).toContain('PublishAllPorts=true');
+      expect(emptyEntryAndPubAll.warnings.some((w) => w.includes('--publish-all'))).toBe(true);
+    }
   });
 });

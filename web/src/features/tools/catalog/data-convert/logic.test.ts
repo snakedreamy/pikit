@@ -114,5 +114,8 @@ code_ttl_seconds = 180`;
     // Non-integer decimal exceeding IEEE-754 double precision must fail instead of silently rounding
     expect(convertStructuredData('{"frac": 9007199254740993.5}', 'json', 'yaml').ok).toBe(false);
     expect(convertStructuredData('frac: 9007199254740993.5\n', 'yaml', 'json').ok).toBe(false);
+
+    // Unresolved custom YAML tags (`!Ref`) must fail explicitly instead of silently stripping tag semantics
+    expect(convertStructuredData('vpc_id: !Ref MainVpc\n', 'yaml', 'json').ok).toBe(false);
   });
 });

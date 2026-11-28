@@ -127,26 +127,29 @@ pub fn sample_disks_scoped(
     discover_and_sample_disks(scope)
 }
 
-fn normalize_lexical_abs(path: &Path) -> PathBuf {
-    let mut out = PathBuf::from("/");
-    for comp in path.components() {
-        match comp {
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
-            Component::ParentDir => {
-                out.pop();
-                if out.as_os_str().is_empty() {
-                    out.push("/");
-                }
-            }
-            Component::Normal(seg) => out.push(seg),
-        }
-    }
-    out
+enum PathStep {
+    Parent,
+    Normal(std::ffi::OsString),
 }
 
-/// Classifies whether `raw_path` targets a network mount without ever invoking syscalls inside a
-/// remote filesystem: walks path components from `/` one step at a time while on local mounts, and
-/// returns `true` the instant a symlink target enters a network mount prefix in `mountinfo`.
+fn push_path_steps_front(path: &Path, queue: &mut std::collections::VecDeque<PathStep>) {
+    let steps: Vec<PathStep> = path
+        .components()
+        .filter_map(|c| match c {
+            Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
+            Component::ParentDir => Some(PathStep::Parent),
+            Component::Normal(s) => Some(PathStep::Normal(s.to_os_string())),
+        })
+        .collect();
+    for step in steps.into_iter().rev() {
+        queue.push_front(step);
+    }
+}
+
+/// Classifies whether `raw_path` targets or traverses a network mount in exact kernel VFS order
+/// without ever invoking syscalls inside a remote filesystem: resolves symlinks before subsequent
+/// `..` segments while on local mounts, and returns `true` the instant resolution touches a network
+/// mount prefix in `mountinfo`.
 fn is_configured_path_on_network_mount_with<F>(
     mountinfo: &str,
     raw_path: &str,
@@ -155,57 +158,52 @@ fn is_configured_path_on_network_mount_with<F>(
 where
     F: FnMut(&Path) -> Option<PathBuf>,
 {
-    let mut current = normalize_lexical_abs(Path::new(raw_path));
-    for _ in 0..=MAX_SYMLINK_HOPS {
-        let cur_str = current.to_string_lossy();
-        if is_path_on_network_mount(mountinfo, &cur_str) {
-            return true;
-        }
-        if is_path_on_network_mount(mountinfo, "/") {
-            return true;
-        }
+    if is_path_on_network_mount(mountinfo, "/") {
+        return true;
+    }
 
-        let segments: Vec<_> = current
-            .components()
-            .filter_map(|c| match c {
-                Component::Normal(s) => Some(s.to_os_string()),
-                _ => None,
-            })
-            .collect();
+    let mut resolved = PathBuf::from("/");
+    let mut queue = std::collections::VecDeque::new();
+    push_path_steps_front(Path::new(raw_path), &mut queue);
+    let mut symlink_hops = 0usize;
 
-        let mut prefix = PathBuf::from("/");
-        let mut redirected: Option<PathBuf> = None;
-
-        for (idx, seg) in segments.iter().enumerate() {
-            prefix.push(seg);
-            let prefix_str = prefix.to_string_lossy();
-            if is_path_on_network_mount(mountinfo, &prefix_str) {
-                return true;
-            }
-
-            if let Some(link_target) = read_link_fn(&prefix) {
-                let base = if link_target.is_absolute() {
-                    link_target
-                } else {
-                    let mut parent = prefix.clone();
-                    parent.pop();
-                    parent.join(link_target)
-                };
-                let mut next_path = base;
-                for rest in &segments[(idx + 1)..] {
-                    next_path.push(rest);
+    while let Some(step) = queue.pop_front() {
+        match step {
+            PathStep::Parent => {
+                resolved.pop();
+                if resolved.as_os_str().is_empty() {
+                    resolved.push("/");
                 }
-                redirected = Some(normalize_lexical_abs(&next_path));
-                break;
+                if is_path_on_network_mount(mountinfo, &resolved.to_string_lossy()) {
+                    return true;
+                }
             }
-        }
+            PathStep::Normal(seg) => {
+                resolved.push(&seg);
+                if is_path_on_network_mount(mountinfo, &resolved.to_string_lossy()) {
+                    return true;
+                }
 
-        match redirected {
-            Some(next) => current = next,
-            None => return false,
+                if let Some(link_target) = read_link_fn(&resolved) {
+                    symlink_hops += 1;
+                    if symlink_hops > MAX_SYMLINK_HOPS {
+                        return false;
+                    }
+                    if link_target.is_absolute() {
+                        resolved = PathBuf::from("/");
+                    } else {
+                        resolved.pop();
+                        if resolved.as_os_str().is_empty() {
+                            resolved.push("/");
+                        }
+                    }
+                    push_path_steps_front(&link_target, &mut queue);
+                }
+            }
         }
     }
-    false
+
+    is_path_on_network_mount(mountinfo, &resolved.to_string_lossy())
 }
 
 fn is_path_on_network_mount(mountinfo: &str, target_path: &str) -> bool {
@@ -728,6 +726,22 @@ mod tests {
             },
         );
         assert!(is_net);
+
+        // Trailing `..` after a symlink (`symlink/..`) must expand the symlink first, matching kernel VFS
+        let is_net_dotdot =
+            is_configured_path_on_network_mount_with(mountinfo, "/srv/nas-link/..", |p| {
+                let s = p.to_string_lossy();
+                assert!(
+                    !s.starts_with("/mnt/dead-nfs"),
+                    "must never invoke syscalls inside the remote network mount: {s}"
+                );
+                if s == "/srv/nas-link" {
+                    Some(PathBuf::from("../mnt/dead-nfs/export"))
+                } else {
+                    None
+                }
+            });
+        assert!(is_net_dotdot);
 
         let is_local =
             is_configured_path_on_network_mount_with(mountinfo, "/srv/local-dir", |_| None);

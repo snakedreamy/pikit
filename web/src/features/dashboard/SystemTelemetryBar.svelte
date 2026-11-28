@@ -76,11 +76,17 @@
     let timer: number | null = null;
     let inFlight = false;
 
+    const POLL_TIMEOUT_MS = 5_000;
+
     const pollOnce = async () => {
       if (!systemEnabled || document.hidden || inFlight || ctrl.signal.aborted) return;
       inFlight = true;
+      const reqCtrl = new AbortController();
+      const onParentAbort = () => reqCtrl.abort();
+      ctrl.signal.addEventListener('abort', onParentAbort, { once: true });
+      const reqTimer = window.setTimeout(() => reqCtrl.abort(), POLL_TIMEOUT_MS);
       try {
-        const snap = await fetchSystemTelemetry(ctrl.signal);
+        const snap = await fetchSystemTelemetry(reqCtrl.signal);
         if (ctrl.signal.aborted) return;
         liveSnapshot = snap;
         if (snap) {
@@ -97,6 +103,8 @@
           onunauthorized?.();
         }
       } finally {
+        window.clearTimeout(reqTimer);
+        ctrl.signal.removeEventListener('abort', onParentAbort);
         inFlight = false;
       }
     };

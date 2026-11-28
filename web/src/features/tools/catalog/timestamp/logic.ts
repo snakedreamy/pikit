@@ -1,5 +1,7 @@
 // Bidirectional Unix epoch (s/ms), local timezone (with DST), UTC, and ISO 8601 converter
 
+export type TimestampInputMode = 'auto' | 's' | 'ms';
+
 export interface ParsedTimestamp {
   ok: boolean;
   epochMs: number;
@@ -102,7 +104,10 @@ function hasInvalidCalendarDate(s: string): boolean {
   return false;
 }
 
-export function parseFlexibleTimestamp(raw: string): ParsedTimestamp | null {
+export function parseFlexibleTimestamp(
+  raw: string,
+  mode: TimestampInputMode = 'auto'
+): ParsedTimestamp | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
@@ -112,8 +117,14 @@ export function parseFlexibleTimestamp(raw: string): ParsedTimestamp | null {
   if (/^[+-]?\d+(\.\d+)?$/.test(trimmed)) {
     const num = Number(trimmed);
     if (!Number.isFinite(num)) return null;
-    // Magnitudes `< 1e11` (covering Unix seconds up to year 5138) are treated as seconds; larger magnitudes as milliseconds
-    if (Math.abs(num) < 1e11 && !trimmed.includes('.')) {
+    if (mode === 's') {
+      epochMs = trimmed.includes('.') ? Math.round(num * 1000) : num * 1000;
+      detectedUnit = 's';
+    } else if (mode === 'ms') {
+      epochMs = Math.round(num);
+      detectedUnit = 'ms';
+    } else if (Math.abs(num) < 1e11 && !trimmed.includes('.')) {
+      // Magnitudes `< 1e11` (covering Unix seconds up to year 5138) are treated as seconds; larger magnitudes as milliseconds
       epochMs = num * 1000;
       detectedUnit = 's';
     } else if (Math.abs(num) < 1e11) {
