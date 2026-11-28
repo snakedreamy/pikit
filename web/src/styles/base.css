@@ -16,8 +16,9 @@ body {
   margin: 0;
   min-height: 100dvh;
   background:
-    radial-gradient(75% 38% at 50% 0%, var(--ambient-top), transparent 72%),
-    radial-gradient(125% 95% at 50% 0%, transparent 58%, var(--chassis-deep) 100%),
+    repeating-linear-gradient(0deg, var(--grain-line) 0 1px, transparent 1px 3px),
+    radial-gradient(85% 42% at 50% 0%, var(--ambient-top), transparent 70%),
+    radial-gradient(125% 90% at 50% 0%, transparent 54%, var(--chassis-deep) 100%),
     var(--chassis);
   color: var(--ink);
   font-family: var(--font-sans);
@@ -63,6 +64,7 @@ kbd,
 .tabular {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-stretch: 86%;
   letter-spacing: -0.01em;
 }
 
@@ -73,10 +75,10 @@ kbd,
 
 ::selection {
   background: var(--mint);
-  color: var(--glass);
+  color: var(--chassis-deep);
 }
 
-/* ---------------------------------------------------------------- Z1 milled metal plate & Z-1 recessed optical well */
+/* ---------------------------------------------------------------- Z1 milled metal plate with crisp 1px specular bevel */
 .plate {
   position: relative;
   background: var(--plate);
@@ -84,18 +86,52 @@ kbd,
   box-shadow:
     inset 0 1px 0 var(--plate-hi),
     inset 0 0 0 1px var(--plate-rim),
-    0 2px 0 var(--plate-lo),
+    0 1px 0 var(--plate-lo),
     var(--plate-shadow);
 }
 
+/* ---------------------------------------------------------------- Z-1 recessed anodized slot (nav trough, icon wells) */
+.well {
+  position: relative;
+  background: var(--well);
+  border-radius: var(--r-glass);
+  box-shadow:
+    inset 0 0 0 1px var(--well-edge),
+    inset 0 2px 5px var(--well-shadow),
+    0 1px 0 var(--plate-hi);
+}
+
+/* ---------------------------------------------------------------- Z-1 recessed editable input / code / PIN well */
 .glass {
   position: relative;
   background: var(--glass);
   border-radius: var(--r-glass);
   box-shadow:
     inset 0 0 0 1px var(--glass-edge),
-    inset 0 2px 6px var(--glass-shadow),
+    inset 0 1.5px 4px var(--glass-shadow),
     0 1px 0 var(--plate-hi);
+}
+
+/* ---------------------------------------------------------------- Z-1 recessed instrument display window (theme-adaptive) */
+.screen {
+  position: relative;
+  background: linear-gradient(180deg, var(--screen-2) 0%, var(--screen) 30%);
+  color: var(--screen-ink);
+  border-radius: var(--r-screen);
+  box-shadow:
+    inset 0 0 0 1px var(--screen-edge),
+    inset 0 2px 10px var(--screen-shadow),
+    0 1px 0 var(--plate-hi);
+  overflow: hidden;
+}
+
+.screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(168deg, var(--screen-glare), transparent 28%);
 }
 
 /* Z2 foreground workbench sheet floating above a dimmed main stage */
@@ -109,22 +145,21 @@ kbd,
     var(--sheet-shadow);
 }
 
-/* Silkscreen panel legend heading */
+/* Panel legend heading */
 .legend {
   display: flex;
   align-items: baseline;
   gap: 0.625rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--ink);
   white-space: nowrap;
 }
 
 .legend__note {
   font-size: 0.75rem;
   font-weight: 400;
-  letter-spacing: 0.01em;
   color: var(--ink-3);
 }
 
@@ -136,7 +171,7 @@ kbd,
   height: 0.4375rem;
   border-radius: 50%;
   background: var(--groove);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.35);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.22);
   transition:
     background-color 0.2s,
     box-shadow 0.2s;
@@ -144,21 +179,23 @@ kbd,
 
 .lamp[data-color='mint'] {
   background: var(--mint);
-  box-shadow: 0 0 0.4rem var(--mint-glow);
+  box-shadow: 0 0 0.45rem var(--mint-glow);
 }
 
 .lamp[data-color='amber'] {
   background: var(--amber);
-  box-shadow: 0 0 0.4rem var(--amber-glow);
+  box-shadow: 0 0 0.45rem var(--amber-glow);
 }
 
 .lamp[data-color='fault'] {
   background: var(--fault);
-  box-shadow: 0 0 0.4rem var(--fault-glow);
+  box-shadow: 0 0 0.45rem var(--fault-glow);
 }
 
 .lamp[data-color='dim'] {
   background: var(--ink-3);
+  opacity: 0.45;
+  box-shadow: none;
 }
 
 .sr-only {

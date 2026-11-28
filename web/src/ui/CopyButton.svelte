@@ -81,13 +81,14 @@
     border: 0;
     border-radius: var(--r-key);
     background: var(--plate-raised);
-    color: var(--ink);
-    font-weight: 500;
+    color: var(--ink-2);
+    font-weight: 550;
     white-space: nowrap;
     flex: none;
     box-shadow:
       inset 0 1px 0 var(--plate-hi),
-      0 2px 0 var(--plate-lo);
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo);
     transition:
       transform 0.08s,
       box-shadow 0.08s,
@@ -96,7 +97,7 @@
   }
 
   .pk-copy--sm {
-    min-height: 1.75rem;
+    min-height: 1.6875rem;
     padding: 0 0.625rem;
     font-size: 0.75rem;
   }
@@ -107,11 +108,12 @@
   }
 
   .pk-copy:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--plate-raised), var(--ink) 8%);
+    color: var(--ink);
+    background: color-mix(in oklab, var(--plate-raised), var(--ink) 6%);
   }
 
   .pk-copy:active:not(:disabled) {
-    transform: translateY(2px);
+    transform: translateY(1px);
     box-shadow: inset 0 1px 0 var(--plate-hi);
   }
 

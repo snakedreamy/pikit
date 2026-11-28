@@ -115,9 +115,9 @@ test.describe('P3 Local-Only Toolbox: All 25 Plugin Workbenches, Bilingual i18n 
     // Switch locales on the Device & Browser Inspector workbench and confirm reactive translation updates without missing keys
     const localeSelect = page.locator('select[name="ui-locale"]');
     await localeSelect.selectOption('zh-CN');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('设备与浏览器深度诊断');
+    await expect(page.locator('.wb-shell__head h2')).toHaveText('设备与浏览器深度诊断');
     await localeSelect.selectOption('en');
-    await expect(page.locator('.wb-shell__center h2')).toHaveText('Device & Browser Inspector');
+    await expect(page.locator('.wb-shell__head h2')).toHaveText('Device & Browser Inspector');
 
     // Verify no tool inputs or outputs were written to `localStorage` (only allowlisted keys are permitted)
     const storageKeys = await page.evaluate(() => Object.keys(window.localStorage));

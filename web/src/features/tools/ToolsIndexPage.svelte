@@ -141,38 +141,20 @@
       {#each displayedSections as section (section.key)}
         <section class="tools-group">
           <header class="tools-group__head">
-            <span class="tools-group__tick" aria-hidden="true"></span>
             <h3>{section.title}</h3>
-            <span class="tools-group__line" aria-hidden="true"></span>
-            <span class="tools-group__count mono">
+            <span class="tools-group__count">
               {t('groupCount', { count: section.items.length }, 'tools')}
             </span>
+            <span class="tools-group__line" aria-hidden="true"></span>
           </header>
 
           <div class="tools-grid">
             {#each section.items as item (`${section.key}:${item.id}`)}
               {@const starred = isFavoriteTool(item.id)}
               <article class="plate tool-card">
-                <div class="tool-card__top">
-                  <div class="tool-card__identity">
-                    <span class="glass tool-card__icon" aria-hidden="true">
-                      <Icon name={item.icon} size="md" />
-                    </span>
-                    <span class="tool-card__badge mono">{item.badge}</span>
-                  </div>
-                  <button
-                    type="button"
-                    class="tool-card__star"
-                    data-starred={starred ? 'true' : undefined}
-                    aria-label={starred
-                      ? t('favoriteRemove', undefined, 'tools')
-                      : t('favoriteAdd', undefined, 'tools')}
-                    aria-pressed={starred ? 'true' : 'false'}
-                    onclick={() => toggleFavoriteTool(item.id)}
-                  >
-                    <Icon name="star" size="xs" />
-                  </button>
-                </div>
+                <span class="well tool-card__icon" aria-hidden="true">
+                  <Icon name={item.icon} size="md" />
+                </span>
 
                 <a
                   href={`/tools/${item.id}`}
@@ -183,8 +165,23 @@
                   }}
                 >
                   <h4 class="tool-card__name">{item.name}</h4>
-                  <p class="tool-card__desc">{item.description}</p>
                 </a>
+
+                <span class="tool-card__badge mono">{item.badge}</span>
+                <p class="tool-card__desc">{item.description}</p>
+
+                <button
+                  type="button"
+                  class="tool-card__star"
+                  data-starred={starred ? 'true' : undefined}
+                  aria-label={starred
+                    ? t('favoriteRemove', undefined, 'tools')
+                    : t('favoriteAdd', undefined, 'tools')}
+                  aria-pressed={starred ? 'true' : 'false'}
+                  onclick={() => toggleFavoriteTool(item.id)}
+                >
+                  <Icon name="star" size="xs" />
+                </button>
               </article>
             {/each}
           </div>
@@ -198,29 +195,27 @@
   .tools-index {
     display: flex;
     flex-direction: column;
-    gap: 1.625rem;
+    gap: 1.75rem;
   }
 
   .tools-bar {
-    padding: 0 0.125rem 0.875rem;
-    border-bottom: 1px solid var(--hairline);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
   }
 
   .tools-bar__title h2 {
-    font-size: 1.125rem;
+    font-size: 1.4375rem;
     font-weight: 700;
-    letter-spacing: 0.01em;
+    line-height: 1.25;
     color: var(--ink);
   }
 
   .tools-bar__title p {
-    margin-top: 0.25rem;
-    font-size: 0.78125rem;
+    margin-top: 0.1875rem;
+    font-size: 0.84375rem;
     color: var(--ink-3);
   }
 
@@ -231,41 +226,38 @@
   }
 
   .tools-bar__select {
-    width: 11.75rem;
+    width: 12rem;
   }
 
   .tools-sections {
     display: flex;
     flex-direction: column;
-    gap: 1.875rem;
+    gap: 2.125rem;
   }
 
   .tools-group {
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
+    gap: 0.9375rem;
   }
 
   .tools-group__head {
     display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0 0.125rem;
-  }
-
-  .tools-group__tick {
-    width: 3px;
-    height: 0.875rem;
-    border-radius: 1.5px;
-    background: var(--amber);
-    flex-shrink: 0;
+    align-items: baseline;
+    gap: 0.75rem;
   }
 
   .tools-group__head h3 {
-    font-size: 0.875rem;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-    color: var(--ink-2);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: 0.005em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .tools-group__count {
+    font-size: 0.8125rem;
+    color: var(--ink-3);
     white-space: nowrap;
   }
 
@@ -273,15 +265,7 @@
     flex: 1;
     height: 1px;
     background: var(--hairline);
-  }
-
-  .tools-group__count {
-    font-size: 0.6875rem;
-    color: var(--ink-3);
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    background: var(--glass);
-    white-space: nowrap;
+    align-self: center;
   }
 
   .tools-grid {
@@ -290,43 +274,45 @@
     gap: var(--gap);
   }
 
+  /* Matches BookmarkCard 2-column icon-spanning grid with stretched link for full-card clickability */
   .tool-card {
-    padding: 0.9375rem 1.0625rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-    min-height: 6.375rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.125rem 0.9375rem;
+    align-content: start;
+    padding: 1.0625rem 1.125rem 1.125rem;
     transition:
       transform 0.14s var(--ease-out),
-      background-color 0.14s;
+      background-color 0.14s,
+      box-shadow 0.14s;
   }
 
   .tool-card:hover {
-    transform: translateY(-1.5px);
+    transform: translateY(-2px);
     background: var(--plate-raised);
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo),
+      var(--plate-shadow-hover);
   }
 
-  .tool-card__top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
-  .tool-card__identity {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5625rem;
-    min-width: 0;
+  .tool-card:active {
+    transform: translateY(0.5px);
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo);
   }
 
   .tool-card__icon {
-    width: 2.125rem;
-    height: 2.125rem;
+    grid-row: 1 / 3;
+    width: 2.75rem;
+    height: 2.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--r-key);
+    border-radius: 0.625rem;
     color: var(--mint);
     flex-shrink: 0;
     transition: color 0.14s;
@@ -336,57 +322,88 @@
     color: var(--amber);
   }
 
+  .tool-card__link {
+    align-self: end;
+    min-width: 0;
+  }
+
+  .tool-card__link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: 1;
+  }
+
+  .tool-card__name {
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.3;
+    color: var(--ink);
+    padding-right: 1.625rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .tool-card__badge {
+    align-self: start;
     font-size: 0.6875rem;
-    font-weight: 600;
+    font-weight: 500;
+    line-height: 1.45;
     color: var(--ink-3);
-    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tool-card__desc {
+    grid-column: 1 / -1;
+    margin-top: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+    line-height: 1.48;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 2.4em;
   }
 
   .tool-card__star {
+    position: absolute;
+    top: 0.875rem;
+    right: 0.875rem;
+    z-index: 2;
     width: 1.75rem;
     height: 1.75rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border: 0;
-    border-radius: 0.3125rem;
+    border-radius: 0.375rem;
     background: transparent;
     color: var(--ink-3);
-    transition: color 0.14s, background-color 0.14s;
+    opacity: 0.65;
+    transition:
+      color 0.14s,
+      opacity 0.14s,
+      background-color 0.14s;
+  }
+
+  .tool-card:hover .tool-card__star {
+    opacity: 1;
   }
 
   .tool-card__star:hover {
     background: var(--groove);
-    color: var(--ink);
-  }
-
-  .tool-card__star[data-starred='true'] {
     color: var(--amber);
   }
 
-  .tool-card__link {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .tool-card__name {
-    font-size: 0.9375rem;
-    font-weight: 650;
-    color: var(--ink);
-  }
-
-  .tool-card__desc {
-    font-size: 0.75rem;
-    color: var(--ink-3);
-    line-height: 1.45;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+  .tool-card__star[data-starred='true'] {
+    opacity: 1;
+    color: var(--amber);
   }
 
   @media (max-width: 1200px) {

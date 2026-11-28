@@ -78,12 +78,11 @@
       {#each groups as group, gIdx (`${gIdx}:${group.name}`)}
         <section class="dash-group">
           <header class="dash-group__head">
-            <span class="dash-group__tick" aria-hidden="true"></span>
             <h2>{group.name}</h2>
-            <span class="dash-group__line" aria-hidden="true"></span>
-            <span class="dash-group__count mono">
+            <span class="dash-group__count">
               {t('groupCount', { count: group.items.length }, 'dashboard')}
             </span>
+            <span class="dash-group__line" aria-hidden="true"></span>
           </header>
 
           <div class="dash-group__grid">
@@ -107,35 +106,32 @@
   .dash__groups {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 2.25rem;
   }
 
   .dash-group {
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
+    gap: 0.9375rem;
   }
 
   .dash-group__head {
     display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0 0.125rem;
-  }
-
-  .dash-group__tick {
-    width: 3px;
-    height: 0.875rem;
-    border-radius: 1.5px;
-    background: var(--amber);
-    flex-shrink: 0;
+    align-items: baseline;
+    gap: 0.75rem;
   }
 
   .dash-group__head h2 {
-    font-size: 0.875rem;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-    color: var(--ink-2);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: 0.005em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .dash-group__count {
+    font-size: 0.8125rem;
+    color: var(--ink-3);
     white-space: nowrap;
   }
 
@@ -143,15 +139,7 @@
     flex: 1;
     height: 1px;
     background: var(--hairline);
-  }
-
-  .dash-group__count {
-    font-size: 0.6875rem;
-    color: var(--ink-3);
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    background: var(--glass);
-    white-space: nowrap;
+    align-self: center;
   }
 
   .dash-group__grid {

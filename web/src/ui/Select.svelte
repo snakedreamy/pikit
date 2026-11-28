@@ -42,7 +42,7 @@
   <select
     {id}
     name={name ?? id ?? ariaLabel}
-    class="glass pk-select"
+    class="pk-select"
     {value}
     {disabled}
     aria-label={ariaLabel}
@@ -73,19 +73,33 @@
   .pk-select {
     appearance: none;
     width: 100%;
-    height: 2rem;
-    padding: 0 1.875rem 0 0.6875rem;
+    height: 2.25rem;
+    padding: 0 2rem 0 0.75rem;
     border: 0;
+    border-radius: var(--r-key);
+    background: var(--plate);
     color: var(--ink);
-    font-size: 0.8125rem;
+    font-size: 0.84375rem;
     font-weight: 500;
     cursor: pointer;
-    transition: color 0.14s;
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo);
+    transition:
+      color 0.14s,
+      background-color 0.14s,
+      transform 0.1s;
+  }
+
+  .pk-select:hover:not(:disabled) {
+    background: var(--plate-raised);
   }
 
   .pk-select-wrap[data-inline='true'] .pk-select {
     width: auto;
-    padding: 0 1.6875rem 0 0.625rem;
+    height: 2.25rem;
+    padding: 0 1.875rem 0 0.75rem;
     color: var(--ink-2);
   }
 

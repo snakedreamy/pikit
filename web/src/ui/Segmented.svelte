@@ -79,35 +79,38 @@
   .pk-segmented {
     display: inline-flex;
     align-items: center;
-    height: 2rem;
+    height: 2.125rem;
     padding: 0.1875rem;
-    border-radius: var(--r-key);
-    background: var(--glass);
+    border-radius: calc(var(--r-key) + 2px);
+    background: var(--well);
     box-shadow:
-      inset 0 0 0 1px var(--glass-edge),
+      inset 0 0 0 1px var(--well-edge),
+      inset 0 2px 5px var(--well-shadow),
       0 1px 0 var(--plate-hi);
   }
 
   .pk-segmented--md {
-    height: 2.25rem;
+    height: 2.375rem;
   }
 
   .pk-segmented button {
     height: 100%;
-    padding: 0 0.75rem;
+    padding: 0 0.8125rem;
     border: 0;
-    border-radius: 0.25rem;
+    border-radius: calc(var(--r-key) - 1px);
     background: transparent;
     color: var(--ink-2);
     font-size: 0.8125rem;
+    font-weight: 500;
     white-space: nowrap;
     transition:
       background-color 0.14s,
-      color 0.14s;
+      color 0.14s,
+      box-shadow 0.14s;
   }
 
   .pk-segmented--sm button {
-    padding: 0 0.6875rem;
+    padding: 0 0.75rem;
     font-size: 0.8125rem;
   }
 
@@ -118,7 +121,10 @@
   .pk-segmented button[aria-checked='true'] {
     background: var(--plate-raised);
     color: var(--ink);
-    font-weight: 500;
-    box-shadow: inset 0 1px 0 var(--plate-hi);
+    font-weight: 650;
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1.5px 0 var(--plate-side);
   }
 </style>

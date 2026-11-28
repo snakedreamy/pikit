@@ -70,22 +70,25 @@
 {:else}
   <section class="plate wb-shell">
     <header class="wb-shell__head">
-      <div class="wb-shell__left">
+      <div class="wb-shell__lead">
         <Button variant="secondary" size="sm" onclick={() => navigate('/tools')}>
           <Icon name="chevron-left" size="xs" />
           <span>{t('backToIndex', undefined, 'tools')}</span>
         </Button>
-      </div>
 
-      <div class="wb-shell__center">
-        <div class="wb-shell__title-row">
-          <span class="glass wb-shell__icon" aria-hidden="true">
-            <Icon name={meta.icon} size="md" />
-          </span>
-          <h2>{toolName(meta.id)}</h2>
-          <span class="glass wb-shell__badge mono">{meta.badge}</span>
+        <span class="wb-shell__sep" aria-hidden="true"></span>
+
+        <span class="well wb-shell__icon" aria-hidden="true">
+          <Icon name={meta.icon} size="md" />
+        </span>
+
+        <div class="wb-shell__title">
+          <div class="wb-shell__title-row">
+            <h2>{toolName(meta.id)}</h2>
+            <span class="well wb-shell__badge mono">{meta.badge}</span>
+          </div>
+          <p>{toolDescription(meta.id)}</p>
         </div>
-        <p>{toolDescription(meta.id)}</p>
       </div>
 
       <div class="wb-shell__right">
@@ -127,48 +130,61 @@
 
 <style>
   .wb-shell {
-    padding: 1.25rem 1.375rem 1.5rem;
+    padding: 1.375rem 1.5rem 1.625rem;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1.375rem;
   }
 
-  /* Symmetric 3-column header: back button (left), tool title (center), star toggle (right) */
+  /* Left-aligned workbench header aligned cleanly with form fields below */
   .wb-shell__head {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
-    padding-bottom: 1rem;
+    padding-bottom: 1.0625rem;
     border-bottom: 1px solid var(--hairline);
+    flex-wrap: wrap;
   }
 
-  .wb-shell__left {
-    justify-self: start;
+  .wb-shell__lead {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
-  .wb-shell__center {
-    text-align: center;
+  .wb-shell__sep {
+    width: 1px;
+    height: 1.5rem;
+    background: var(--hairline);
+    flex-shrink: 0;
+  }
+
+  .wb-shell__icon {
+    width: 2.375rem;
+    height: 2.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5625rem;
+    color: var(--mint);
+    flex-shrink: 0;
+  }
+
+  .wb-shell__title {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
+    gap: 0.125rem;
+    min-width: 0;
   }
 
   .wb-shell__title-row {
     display: inline-flex;
     align-items: center;
-    gap: 0.5625rem;
-  }
-
-  .wb-shell__icon {
-    width: 2rem;
-    height: 2rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--r-key);
-    color: var(--mint);
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .wb-shell__badge {
@@ -176,22 +192,22 @@
     border-radius: 0.25rem;
     font-size: 0.6875rem;
     font-weight: 600;
-    color: var(--mint);
+    color: var(--ink-2);
   }
 
-  .wb-shell__center h2 {
+  .wb-shell__title h2 {
     font-size: 1.125rem;
     font-weight: 700;
     color: var(--ink);
   }
 
-  .wb-shell__center p {
-    font-size: 0.75rem;
+  .wb-shell__title p {
+    font-size: 0.78125rem;
     color: var(--ink-3);
   }
 
   .wb-shell__right {
-    justify-self: end;
+    flex-shrink: 0;
   }
 
   .wb-shell__loading {
@@ -202,12 +218,11 @@
   }
 
   @media (max-width: 720px) {
-    .wb-shell__head {
-      grid-template-columns: 1fr 1fr;
+    .wb-shell__sep {
+      display: none;
     }
-    .wb-shell__center {
-      grid-column: 1 / -1;
-      order: -1;
+    .wb-shell__lead {
+      flex-wrap: wrap;
     }
   }
 </style>

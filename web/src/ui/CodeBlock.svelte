@@ -60,17 +60,17 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.625rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--groove);
+    padding: 0.4375rem 0.75rem;
+    border-bottom: 1px solid var(--hairline);
   }
 
   .pk-codeblock__pre {
     margin: 0;
-    padding: 0.6875rem 0.75rem;
+    padding: 0.75rem 0.8125rem;
     overflow-x: auto;
     font-size: 0.8125rem;
     line-height: 1.6;
-    color: var(--mint);
+    color: var(--ink);
   }
 
   .pk-codeblock__pre--wrap {

@@ -15,7 +15,7 @@
   const monogram = $derived(deriveBookmarkMonogram(name, iconText));
 </script>
 
-<span class="glass bm-icon" aria-hidden="true">
+<span class="well bm-icon" aria-hidden="true">
   {#if showImage && iconUrl}
     <img
       src={iconUrl}
@@ -33,20 +33,21 @@
 
 <style>
   .bm-icon {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 2.875rem;
+    height: 2.875rem;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--r-key);
+    border-radius: 0.625rem;
     overflow: hidden;
     transition: box-shadow 0.16s var(--ease-out);
   }
 
   .bm-icon img {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.875rem;
+    height: 1.875rem;
+    border-radius: 0.375rem;
     object-fit: contain;
     display: block;
   }

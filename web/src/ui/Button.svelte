@@ -59,7 +59,7 @@
     gap: 0.4375rem;
     border: 0;
     border-radius: var(--r-key);
-    background: var(--plate-raised);
+    background: var(--plate);
     color: var(--ink);
     font-weight: 550;
     line-height: 1;
@@ -67,12 +67,14 @@
     user-select: none;
     box-shadow:
       inset 0 1px 0 var(--plate-hi),
-      0 1.5px 0 var(--key-bevel),
-      0 2px 5px rgb(0 0 0 / 0.2);
+      inset 0 0 0 1px var(--plate-rim),
+      0 1.5px 0 var(--plate-side),
+      0 3px 8px -4px rgb(0 0 0 / 0.25);
     transition:
-      transform 0.08s,
-      box-shadow 0.08s,
-      background-color 0.14s;
+      transform 0.1s var(--ease-out),
+      box-shadow 0.1s var(--ease-out),
+      background-color 0.14s,
+      color 0.14s;
   }
 
   .pk-key--full {
@@ -80,53 +82,55 @@
   }
 
   .pk-key--sm {
-    height: 2rem;
-    padding: 0 0.6875rem;
+    height: 2.125rem;
+    padding: 0 0.75rem;
     font-size: 0.8125rem;
   }
   .pk-key--md {
-    height: 2.1875rem;
-    padding: 0 0.875rem;
-    font-size: 0.84375rem;
+    height: 2.3125rem;
+    padding: 0 0.9375rem;
+    font-size: 0.875rem;
   }
   .pk-key--lg {
-    height: 2.4375rem;
-    padding: 0 1.125rem;
+    height: 2.625rem;
+    padding: 0 1.25rem;
     font-size: 0.9375rem;
   }
 
   .pk-key--secondary:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--plate-raised), var(--ink) 8%);
+    background: var(--plate-raised);
   }
 
   .pk-key--primary {
     background: var(--amber);
     color: var(--ink-on-amber);
-    font-weight: 600;
+    font-weight: 700;
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.38),
-      0 2px 0 var(--amber-bevel);
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 2px 0 var(--amber-bevel),
+      0 8px 16px -6px rgb(0 0 0 / 0.36);
   }
   .pk-key--primary:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--amber), white 12%);
+    background: color-mix(in oklab, var(--amber), white 10%);
   }
 
   .pk-key--ghost {
     background: transparent;
     color: var(--ink-2);
-    box-shadow: inset 0 0 0 1px var(--plate-hi);
+    box-shadow: inset 0 0 0 1px var(--hairline);
   }
   .pk-key--ghost:hover:not(:disabled) {
     color: var(--ink);
-    background: rgb(255 255 255 / 0.04);
+    background: var(--groove);
   }
 
   .pk-key--danger {
-    background: var(--fault-soft);
+    background: var(--plate-raised);
     color: var(--fault);
     box-shadow:
-      inset 0 0 0 1px rgb(255 112 89 / 0.36),
-      0 2px 0 var(--plate-lo);
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1.5px 0 var(--plate-side);
   }
   .pk-key--danger:hover:not(:disabled) {
     background: var(--fault);
@@ -135,12 +139,25 @@
 
   .pk-key:active:not(:disabled) {
     transform: translateY(1px);
-    box-shadow: inset 0 1px 0 var(--plate-hi);
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 0.5px 0 var(--plate-side);
+  }
+
+  .pk-key--primary:active:not(:disabled) {
+    transform: translateY(1.5px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 0.5px 0 var(--amber-bevel);
   }
 
   .pk-key:disabled {
+    background: var(--well);
     color: var(--ink-3);
-    opacity: 0.6;
+    font-weight: 550;
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    opacity: 0.78;
     cursor: not-allowed;
   }
 

@@ -43,8 +43,8 @@
   let { speedtestLimits, onunauthorized, previewSample }: Props = $props();
 
   const VIEW_W = 640;
-  const TOP_PAD = 12;
-  const BOT_Y = 98;
+  const TOP_PAD = 8;
+  const BOT_Y = 96;
 
   let phase = $state<SpeedtestPhase>('idle');
   let liveDown = $state<number | null>(null);
@@ -97,6 +97,11 @@
   const rxSamples = $derived(previewSample ? previewSample.rxSeries : liveRxSeries);
   const txSamples = $derived(previewSample ? previewSample.txSeries : liveTxSeries);
 
+  const hasDownReading = $derived(Boolean(previewSample) || liveDown !== null);
+  const hasUpReading = $derived(Boolean(previewSample) || liveUp !== null);
+  const hasPingReading = $derived(Boolean(previewSample) || livePing !== null);
+  const hasJitterReading = $derived(Boolean(previewSample) || liveJitter !== null);
+
   const scaleMax = $derived.by(() => {
     let peak = 20;
     for (const v of rxSamples) if (v > peak) peak = v;
@@ -116,18 +121,19 @@
   } {
     if (samples.length === 0) return { line: '', area: '' };
     const spanY = BOT_Y - TOP_PAD;
-    const denom = Math.max(samples.length - 1, 1);
-    const pts: string[] = [];
+    const totalPts = samples.length + 1;
+    const denom = Math.max(totalPts - 1, 1);
+    const pts: string[] = [`0.0,${BOT_Y.toFixed(1)}`];
 
     for (let i = 0; i < samples.length; i += 1) {
-      const x = (i / denom) * VIEW_W;
+      const x = ((i + 1) / denom) * VIEW_W;
       const clamped = Math.max(0, Math.min(1, samples[i] / maxVal));
       const y = BOT_Y - clamped * spanY;
       pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
     }
 
     const line = pts.join(' ');
-    const lastX = ((samples.length - 1) / denom) * VIEW_W;
+    const lastX = ((totalPts - 1) / denom) * VIEW_W;
     const area = `0,${BOT_Y} ${line} ${lastX.toFixed(1)},${BOT_Y}`;
     return { line, area };
   }
@@ -141,14 +147,15 @@
     pingCount: number;
     phaseDurationMs: number;
     warmupMs: number;
+    sampleIntervalMs: number;
   } {
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('quick') === '1') {
-        return { pingCount: 6, phaseDurationMs: 1200, warmupMs: 250 };
+        return { pingCount: 6, phaseDurationMs: 1200, warmupMs: 250, sampleIntervalMs: 60 };
       }
     }
-    return { pingCount: 20, phaseDurationMs: 10_000, warmupMs: 2_000 };
+    return { pingCount: 20, phaseDurationMs: 10_000, warmupMs: 2_000, sampleIntervalMs: 100 };
   }
 
   async function handleStartOrStop() {
@@ -183,6 +190,7 @@
           requestsPerMinute: speedtestLimits?.requestsPerMinute,
           phaseDurationMs: timing.phaseDurationMs,
           warmupMs: timing.warmupMs,
+          sampleIntervalMs: timing.sampleIntervalMs,
           onProgress: (snap) => {
             if (runController !== ctrl) return;
             phase = snap.phase;
@@ -263,55 +271,8 @@
     </div>
   {/if}
 
-  <!-- Section 1: 4-column symmetric metric readouts (active phase illuminates a subtle border accent) -->
-  <section class="sp-metrics" aria-label={t('title', undefined, 'speedtest')}>
-    <article
-      class="plate sp-metric"
-      data-live={effectivePhase === 'download' ? 'rx' : undefined}
-    >
-      <span class="sp-metric__label">{t('metricDown', undefined, 'speedtest')}</span>
-      <div class="sp-metric__readout mono">
-        <b class="sp-metric__num sp-metric__num--rx">{downVal}</b>
-        <small>Mbps</small>
-      </div>
-    </article>
-
-    <article
-      class="plate sp-metric"
-      data-live={effectivePhase === 'upload' ? 'tx' : undefined}
-    >
-      <span class="sp-metric__label">{t('metricUp', undefined, 'speedtest')}</span>
-      <div class="sp-metric__readout mono">
-        <b class="sp-metric__num sp-metric__num--tx">{upVal}</b>
-        <small>Mbps</small>
-      </div>
-    </article>
-
-    <article
-      class="plate sp-metric"
-      data-live={effectivePhase === 'ping' ? 'rx' : undefined}
-    >
-      <span class="sp-metric__label">{t('metricPing', undefined, 'speedtest')}</span>
-      <div class="sp-metric__readout mono">
-        <b class="sp-metric__num">{pingVal}</b>
-        <small>ms</small>
-      </div>
-    </article>
-
-    <article
-      class="plate sp-metric"
-      data-live={effectivePhase === 'ping' ? 'rx' : undefined}
-    >
-      <span class="sp-metric__label">{t('metricJitter', undefined, 'speedtest')}</span>
-      <div class="sp-metric__readout mono">
-        <b class="sp-metric__num">{jitterVal}</b>
-        <small>ms</small>
-      </div>
-    </article>
-  </section>
-
-  <!-- Section 2: Dual-channel real-time oscilloscope viewport with adaptive scale ticks -->
-  <section class="plate sp-bench">
+  <!-- Unified instrument bench: header controls + single recessed display window (4 readouts + dual-channel dot-grid scope) -->
+  <section class="plate sp-bench" aria-label={t('title', undefined, 'speedtest')}>
     <header class="sp-bench__head">
       <div class="sp-bench__title">
         <h2>{t('title', undefined, 'speedtest')}</h2>
@@ -319,13 +280,6 @@
       </div>
 
       <ul class="sp-phases">
-        <li data-active={effectivePhase === 'idle' || effectivePhase === 'aborted' ? 'true' : undefined}>
-          <span
-            class="lamp"
-            data-color={effectivePhase === 'idle' || effectivePhase === 'aborted' ? 'amber' : 'dim'}
-          ></span>
-          {t('phaseIdle', undefined, 'speedtest')}
-        </li>
         <li data-active={effectivePhase === 'ping' ? 'true' : undefined}>
           <span class="lamp" data-color={effectivePhase === 'ping' ? 'mint' : 'dim'}></span>
           {t('phasePing', undefined, 'speedtest')}
@@ -338,17 +292,17 @@
           <span class="lamp" data-color={effectivePhase === 'upload' ? 'amber' : 'dim'}></span>
           {t('phaseUp', undefined, 'speedtest')}
         </li>
-        {#if effectivePhase === 'done'}
-          <li data-active="true">
-            <span class="lamp" data-color="mint"></span>
-            {t('phaseDone', undefined, 'speedtest')}
-          </li>
-        {/if}
+        <li data-active={effectivePhase === 'done' ? 'true' : undefined}>
+          <span class="lamp" data-color={effectivePhase === 'done' ? 'mint' : 'dim'}></span>
+          {t('phaseDone', undefined, 'speedtest')}
+        </li>
       </ul>
 
       <div class="sp-bench__action">
         <Button
           variant={isRunning ? 'danger' : 'primary'}
+          size="lg"
+          icon={isRunning ? 'square' : 'play'}
           onclick={handleStartOrStop}
         >
           {isRunning
@@ -358,66 +312,132 @@
       </div>
     </header>
 
-    <div class="glass sp-scope" aria-hidden="true">
-      <div class="sp-scope__track">
-        <div class="sp-scope__legend">
-          <div class="sp-scope__ch">
-            <span class="lamp" data-color="mint"></span>
-            <b class="mono">RX</b>
+    <div class="screen sp-display">
+      <div class="sp-metrics">
+        <article
+          class="sp-metric"
+          data-live={effectivePhase === 'download' ? 'rx' : undefined}
+        >
+          <span class="sp-metric__label">
+            <i class="sp-metric__dot sp-metric__dot--rx" aria-hidden="true"></i>
+            {t('metricDown', undefined, 'speedtest')}
+          </span>
+          <div class="sp-metric__readout mono">
+            <b
+              class="sp-metric__num sp-metric__num--rx"
+              data-idle={!hasDownReading ? 'true' : undefined}
+            >
+              {downVal}
+            </b>
+            <small>Mbps</small>
           </div>
-          <small>{t('channelRx', undefined, 'speedtest')}</small>
-        </div>
+        </article>
 
-        <svg viewBox="0 0 640 108" preserveAspectRatio="none">
-          <line x1="0" y1="12" x2="640" y2="12" class="sp-scope__guide" />
-          <line x1="0" y1="55" x2="640" y2="55" class="sp-scope__guide" />
-          <line x1="0" y1="98" x2="640" y2="98" class="sp-scope__guide" />
-          {#if rxTrace.line}
-            <polygon points={rxTrace.area} class="sp-scope__rx-area" />
-            <polyline points={rxTrace.line} class="sp-scope__rx" />
-          {:else}
-            <line x1="0" y1="98" x2="640" y2="98" class="sp-scope__idle" />
-          {/if}
-        </svg>
+        <article
+          class="sp-metric"
+          data-live={effectivePhase === 'upload' ? 'tx' : undefined}
+        >
+          <span class="sp-metric__label">
+            <i class="sp-metric__dot sp-metric__dot--tx" aria-hidden="true"></i>
+            {t('metricUp', undefined, 'speedtest')}
+          </span>
+          <div class="sp-metric__readout mono">
+            <b
+              class="sp-metric__num sp-metric__num--tx"
+              data-idle={!hasUpReading ? 'true' : undefined}
+            >
+              {upVal}
+            </b>
+            <small>Mbps</small>
+          </div>
+        </article>
 
-        <div class="sp-scope__scale mono">
-          <span>{scaleTopText}</span>
-          <span>{scaleMidText}</span>
-          <span>0</span>
-        </div>
+        <article
+          class="sp-metric"
+          data-live={effectivePhase === 'ping' ? 'rx' : undefined}
+        >
+          <span class="sp-metric__label">{t('metricPing', undefined, 'speedtest')}</span>
+          <div class="sp-metric__readout mono">
+            <b
+              class="sp-metric__num"
+              data-idle={!hasPingReading ? 'true' : undefined}
+            >
+              {pingVal}
+            </b>
+            <small>ms</small>
+          </div>
+        </article>
+
+        <article
+          class="sp-metric"
+          data-live={effectivePhase === 'ping' ? 'rx' : undefined}
+        >
+          <span class="sp-metric__label">{t('metricJitter', undefined, 'speedtest')}</span>
+          <div class="sp-metric__readout mono">
+            <b
+              class="sp-metric__num"
+              data-idle={!hasJitterReading ? 'true' : undefined}
+            >
+              {jitterVal}
+            </b>
+            <small>ms</small>
+          </div>
+        </article>
       </div>
 
-      <div class="sp-scope__track">
-        <div class="sp-scope__legend">
-          <div class="sp-scope__ch">
-            <span class="lamp" data-color="amber"></span>
-            <b class="mono">TX</b>
+      <div class="sp-scope" aria-hidden="true">
+        <div class="sp-scope__track">
+          <div class="sp-scope__legend">
+            <b class="mono">RX</b>
+            <small>{t('channelRx', undefined, 'speedtest')}</small>
           </div>
-          <small>{t('channelTx', undefined, 'speedtest')}</small>
+
+          <div class="sp-scope__plot">
+            <svg viewBox="0 0 640 100" preserveAspectRatio="none">
+              {#if rxTrace.line}
+                <polygon points={rxTrace.area} class="sp-scope__rx-area" />
+                <polyline points={rxTrace.line} class="sp-scope__rx" />
+              {:else}
+                <line x1="0" y1="96" x2="640" y2="96" class="sp-scope__idle" />
+              {/if}
+            </svg>
+          </div>
+
+          <div class="sp-scope__scale mono">
+            <span>{scaleTopText}</span>
+            <span>{scaleMidText}</span>
+            <span>0</span>
+          </div>
         </div>
 
-        <svg viewBox="0 0 640 108" preserveAspectRatio="none">
-          <line x1="0" y1="12" x2="640" y2="12" class="sp-scope__guide" />
-          <line x1="0" y1="55" x2="640" y2="55" class="sp-scope__guide" />
-          <line x1="0" y1="98" x2="640" y2="98" class="sp-scope__guide" />
-          {#if txTrace.line}
-            <polygon points={txTrace.area} class="sp-scope__tx-area" />
-            <polyline points={txTrace.line} class="sp-scope__tx" />
-          {:else}
-            <line x1="0" y1="98" x2="640" y2="98" class="sp-scope__idle" />
-          {/if}
-        </svg>
+        <div class="sp-scope__track">
+          <div class="sp-scope__legend">
+            <b class="mono">TX</b>
+            <small>{t('channelTx', undefined, 'speedtest')}</small>
+          </div>
 
-        <div class="sp-scope__scale mono">
-          <span>{scaleTopText}</span>
-          <span>{scaleMidText}</span>
-          <span>0</span>
+          <div class="sp-scope__plot">
+            <svg viewBox="0 0 640 100" preserveAspectRatio="none">
+              {#if txTrace.line}
+                <polygon points={txTrace.area} class="sp-scope__tx-area" />
+                <polyline points={txTrace.line} class="sp-scope__tx" />
+              {:else}
+                <line x1="0" y1="96" x2="640" y2="96" class="sp-scope__idle" />
+              {/if}
+            </svg>
+          </div>
+
+          <div class="sp-scope__scale mono">
+            <span>{scaleTopText}</span>
+            <span>{scaleMidText}</span>
+            <span>0</span>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Section 3: Browser-local speedtest history ledger -->
+  <!-- Browser-local speedtest history ledger -->
   <section class="plate sp-history">
     <header class="sp-history__head">
       <div>
@@ -425,11 +445,11 @@
         <p>{t('historySubtitle', undefined, 'speedtest')}</p>
       </div>
       {#if historyRows.length > 0 && !previewSample}
-        <Button variant="ghost" size="sm" onclick={clearSpeedtestHistory}>
+        <Button variant="secondary" size="sm" onclick={clearSpeedtestHistory}>
           {t('clearHistory', undefined, 'speedtest')}
         </Button>
       {:else if historyRows.length > 0}
-        <Button variant="ghost" size="sm">
+        <Button variant="secondary" size="sm">
           {t('clearHistory', undefined, 'speedtest')}
         </Button>
       {/if}
@@ -441,7 +461,7 @@
         reason={t('emptyHistoryReason', undefined, 'speedtest')}
       />
     {:else}
-      <div class="glass sp-table-wrap">
+      <div class="sp-table-wrap">
         <table class="sp-table mono">
           <thead>
             <tr>
@@ -455,8 +475,12 @@
             {#each historyRows as row (row.id)}
               <tr>
                 <td>{formatDateTime(row.timestamp)}</td>
-                <td class="sp-table__rx">{fmtRate(row.downloadMbps)} Mbps</td>
-                <td class="sp-table__tx">{fmtRate(row.uploadMbps)} Mbps</td>
+                <td class="sp-table__rx">
+                  {fmtRate(row.downloadMbps)}<small>Mbps</small>
+                </td>
+                <td class="sp-table__tx">
+                  {fmtRate(row.uploadMbps)}<small>Mbps</small>
+                </td>
                 <td>{fmtMs(row.pingMs)} ms / ±{fmtMs(row.jitterMs)} ms</td>
               </tr>
             {/each}
@@ -478,177 +502,203 @@
     display: flex;
     align-items: center;
     gap: 0.625rem;
-    padding: 0.75rem 1rem;
+    padding: 0.8125rem 1.0625rem;
     border-radius: var(--r-key);
     background: var(--notice-fault-bg);
     color: var(--fault);
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .sp-metrics {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--gap);
-  }
-
-  .sp-metric {
-    padding: 1.0625rem 1.125rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.4375rem;
-    transition: box-shadow 0.2s, background-color 0.2s;
-  }
-
-  .sp-metric[data-live='rx'] {
-    box-shadow:
-      inset 0 0 0 1px rgb(114 230 201 / 0.45),
-      var(--plate-shadow);
-  }
-
-  .sp-metric[data-live='tx'] {
-    box-shadow:
-      inset 0 0 0 1px rgb(246 176 50 / 0.5),
-      var(--plate-shadow);
-  }
-
-  .sp-metric__label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--ink-3);
-    letter-spacing: 0.05em;
-  }
-
-  .sp-metric__readout {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.3125rem;
-  }
-
-  .sp-metric__num {
-    font-size: 1.875rem;
-    font-weight: 700;
-    color: var(--ink);
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-  }
-
-  .sp-metric__num--rx {
-    color: var(--mint);
-  }
-
-  .sp-metric__num--tx {
-    color: var(--amber);
-  }
-
-  .sp-metric__readout small {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--ink-3);
+    font-size: 0.84375rem;
+    font-weight: 550;
   }
 
   .sp-bench {
-    padding: 1.1875rem 1.3125rem 1.3125rem;
+    padding: 1.375rem;
     display: flex;
     flex-direction: column;
-    gap: 1.0625rem;
+    gap: 1.125rem;
   }
 
   .sp-bench__head {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 1.5rem;
+    flex-wrap: wrap;
   }
 
   .sp-bench__title h2 {
-    font-size: 1rem;
+    font-size: 1.1875rem;
     font-weight: 700;
     color: var(--ink);
   }
 
   .sp-bench__title p {
-    margin-top: 0.1875rem;
-    font-size: 0.75rem;
+    margin-top: 0.125rem;
+    font-size: 0.8125rem;
     color: var(--ink-3);
   }
 
   .sp-phases {
     list-style: none;
-    margin: 0;
-    padding: 0.375rem 0.8125rem;
-    border-radius: var(--r-key);
-    background: var(--glass);
+    margin: 0 0 0 auto;
+    padding: 0;
     display: inline-flex;
     align-items: center;
-    gap: 0.875rem;
-    font-size: 0.75rem;
+    gap: 1.125rem;
+    font-size: 0.8125rem;
     color: var(--ink-3);
+    flex-wrap: wrap;
   }
 
   .sp-phases li {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: 0.4375rem;
     white-space: nowrap;
   }
 
   .sp-phases li[data-active='true'] {
     color: var(--ink);
-    font-weight: 600;
+    font-weight: 650;
   }
 
   .sp-bench__action {
-    justify-self: end;
+    flex-shrink: 0;
+  }
+
+  /* Unified recessed instrument display window */
+  .sp-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sp-metric {
+    padding: 1.25rem 1.5rem 1.375rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    min-width: 0;
+    transition: background-color 0.2s;
+  }
+
+  .sp-metric + .sp-metric {
+    box-shadow: inset 1px 0 0 var(--screen-line);
+  }
+
+  .sp-metric[data-live='rx'] {
+    background: var(--mint-soft);
+  }
+
+  .sp-metric[data-live='tx'] {
+    background: var(--amber-soft);
+  }
+
+  .sp-metric__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--screen-ink-2);
+  }
+
+  .sp-metric__dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .sp-metric__dot--rx {
+    background: var(--screen-mint);
+    box-shadow: 0 0 0.45rem var(--mint-glow);
+  }
+
+  .sp-metric__dot--tx {
+    background: var(--screen-amber);
+    box-shadow: 0 0 0.45rem var(--amber-glow);
+  }
+
+  .sp-metric__readout {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .sp-metric__num {
+    font-size: 2.625rem;
+    font-weight: 600;
+    color: var(--screen-ink);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    transition:
+      color 0.16s,
+      opacity 0.16s;
+  }
+
+  .sp-metric__num--rx {
+    color: var(--screen-mint);
+  }
+
+  .sp-metric__num--tx {
+    color: var(--screen-amber);
+  }
+
+  .sp-metric__num[data-idle='true'] {
+    color: var(--screen-ink-2);
+    opacity: 0.42;
+  }
+
+  .sp-metric__readout small {
+    font-size: 0.8125rem;
+    font-weight: 450;
+    color: var(--screen-ink-2);
   }
 
   .sp-scope {
-    padding: 0.25rem 0.75rem 0.25rem 0;
-    background-image: linear-gradient(90deg, var(--scope-grid) 1px, transparent 1px);
-    background-size: 3.25rem 100%;
-    background-position: 6.75rem 0;
+    box-shadow: inset 0 1px 0 var(--screen-line);
   }
 
   .sp-scope__track {
     display: grid;
-    grid-template-columns: 6.75rem minmax(0, 1fr) 3.25rem;
+    grid-template-columns: 6.5rem minmax(0, 1fr) 3.75rem;
     align-items: stretch;
-    padding: 0.5rem 0;
+    height: 8.75rem;
   }
 
   .sp-scope__track + .sp-scope__track {
-    border-top: 1px dashed var(--scope-grid);
+    box-shadow: inset 0 1px 0 var(--screen-line);
   }
 
   .sp-scope__legend {
+    padding: 1.0625rem 0 0 1.5rem;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 0.25rem;
-    padding-left: 1rem;
+    gap: 0.1875rem;
   }
 
-  .sp-scope__ch {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .sp-scope__ch b {
-    font-size: 0.8125rem;
-    color: var(--ink);
+  .sp-scope__legend b {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--screen-ink);
   }
 
   .sp-scope__legend small {
-    font-size: 0.6875rem;
-    color: var(--ink-3);
+    font-size: 0.75rem;
+    color: var(--screen-ink-2);
   }
 
-  .sp-scope svg {
+  .sp-scope__plot {
+    position: relative;
+    margin: 0.6875rem 0;
+    background-image: radial-gradient(circle, var(--screen-dot) 1.1px, transparent 1.6px);
+    background-size: 10px 10px;
+    background-position: 5px 5px;
+  }
+
+  .sp-scope__plot svg {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    height: 6.5rem;
+    height: 100%;
     display: block;
   }
 
@@ -657,21 +707,17 @@
     flex-direction: column;
     justify-content: space-between;
     align-items: flex-end;
-    padding: 0.375rem 0.25rem 0.375rem 0.5rem;
-    font-size: 0.625rem;
-    color: var(--ink-3);
+    padding: 0.625rem 0.9375rem 0.625rem 0.5rem;
+    font-size: 0.6875rem;
+    color: var(--screen-ink-2);
     user-select: none;
   }
 
-  .sp-scope__guide {
-    stroke: var(--scope-grid);
-    stroke-width: 1;
-  }
-
   .sp-scope__idle {
-    stroke: var(--scope-grid);
+    stroke: var(--screen-dot);
     stroke-width: 1.5;
     stroke-dasharray: 4 4;
+    vector-effect: non-scaling-stroke;
   }
 
   .sp-scope__rx-area {
@@ -684,25 +730,30 @@
 
   .sp-scope__rx {
     fill: none;
-    stroke: var(--mint);
-    stroke-width: 1.9;
+    stroke: var(--screen-mint);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 2.5px var(--mint-glow));
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 3px var(--mint-glow));
   }
 
   .sp-scope__tx {
     fill: none;
-    stroke: var(--amber);
-    stroke-width: 1.9;
+    stroke: var(--screen-amber);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 2.5px var(--amber-glow));
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 3px var(--amber-glow));
   }
 
+  /* History ledger */
   .sp-history {
-    padding: 1.125rem 1.3125rem 1.25rem;
+    padding: 1.375rem;
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
+    gap: 1rem;
   }
 
   .sp-history__head {
@@ -713,14 +764,14 @@
   }
 
   .sp-history__head h3 {
-    font-size: 0.9375rem;
+    font-size: 1.125rem;
     font-weight: 700;
     color: var(--ink);
   }
 
   .sp-history__head p {
-    margin-top: 0.1875rem;
-    font-size: 0.75rem;
+    margin-top: 0.125rem;
+    font-size: 0.8125rem;
     color: var(--ink-3);
   }
 
@@ -731,38 +782,32 @@
   .sp-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.78125rem;
-    table-layout: fixed;
+    font-size: 0.8125rem;
   }
 
-  .sp-table th,
+  .sp-table th {
+    font-family: var(--font-sans);
+    font-weight: 550;
+    font-size: 0.8125rem;
+    color: var(--ink-3);
+    text-align: right;
+    padding: 0.5rem 0.875rem;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+
   .sp-table td {
-    padding: 0.625rem 1rem;
-    text-align: center;
+    padding: 0.75rem 0.875rem;
+    text-align: right;
+    color: var(--ink);
+  }
+
+  .sp-table tbody tr + tr td {
+    box-shadow: inset 0 1px 0 var(--hairline);
   }
 
   .sp-table th:first-child,
   .sp-table td:first-child {
     text-align: left;
-  }
-
-  .sp-table th:last-child,
-  .sp-table td:last-child {
-    text-align: right;
-  }
-
-  .sp-table thead th {
-    color: var(--ink-3);
-    font-weight: 600;
-    border-bottom: 1px solid var(--hairline);
-  }
-
-  .sp-table tbody tr + tr td {
-    border-top: 1px solid var(--hairline);
-  }
-
-  .sp-table tbody td {
-    color: var(--ink);
   }
 
   .sp-table__rx {
@@ -775,16 +820,28 @@
     font-weight: 600;
   }
 
+  .sp-table td small {
+    font-size: 0.6875rem;
+    font-weight: 450;
+    color: var(--ink-3);
+    margin-left: 0.3125rem;
+  }
+
   @media (max-width: 960px) {
     .sp-metrics {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
-    .sp-bench__head {
-      grid-template-columns: minmax(0, 1fr);
-      justify-items: start;
+    .sp-metric:nth-child(3) {
+      box-shadow: inset 0 1px 0 var(--screen-line);
     }
-    .sp-bench__action {
-      justify-self: start;
+    .sp-metric:nth-child(4) {
+      box-shadow:
+        inset 1px 0 0 var(--screen-line),
+        inset 0 1px 0 var(--screen-line);
+    }
+    .sp-phases {
+      margin-left: 0;
+      width: 100%;
     }
   }
 
@@ -792,18 +849,15 @@
     .sp-metrics {
       grid-template-columns: minmax(0, 1fr);
     }
-    .sp-phases {
-      flex-wrap: wrap;
-      gap: 0.5rem;
+    .sp-metric + .sp-metric {
+      box-shadow: inset 0 1px 0 var(--screen-line);
     }
     .sp-scope__track {
-      grid-template-columns: 4.75rem minmax(0, 1fr) 2.5rem;
+      grid-template-columns: 4.75rem minmax(0, 1fr) 2.75rem;
+      height: 7.25rem;
     }
     .sp-scope__legend {
-      padding-left: 0.625rem;
-    }
-    .sp-scope__legend small {
-      display: none;
+      padding-left: 0.9375rem;
     }
   }
 </style>

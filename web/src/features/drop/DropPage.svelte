@@ -6,7 +6,6 @@
     Button,
     CodeBlock,
     CopyButton,
-    EmptyState,
     Field,
     Icon,
     Meter,
@@ -35,6 +34,9 @@
   );
 
   const NS = 'drop';
+  const FUSE_TICKS = Array.from({ length: 36 }, (_, i) => i);
+  const PIN_LEFT = [0, 1, 2] as const;
+  const PIN_RIGHT = [3, 4, 5] as const;
 
   export interface DropPreviewSample {
     code: string;
@@ -79,6 +81,7 @@
 
   // --- Receive Bay state ---
   let joinInputRaw = $state('');
+  let pinFocused = $state(false);
   let receivePhase = $state<DropReceivePhase>('connecting');
   let receiveActive = $state(false);
   let receiveTransport = $state<'p2p' | 'relay' | null>(null);
@@ -106,6 +109,7 @@
       mime: 'application/zstd',
     };
     sendTotalBytes = previewSample.fileBytes;
+    joinInputRaw = formatSixDigitCode(previewSample.code);
     receiveActive = true;
     receivePhase = 'completed';
     receiveTransport = previewSample.transport;
@@ -344,7 +348,6 @@
 
   function downloadReceivedFile() {
     if (!receivedPayload || receivedPayload.kind !== 'file' || !receivedPayload.blob) return;
-    // Force `application/octet-stream` download via `<a download>` so untrusted HTML/SVG is never rendered in DOM
     const url = URL.createObjectURL(receivedPayload.blob);
     const a = document.createElement('a');
     a.href = url;
@@ -355,6 +358,12 @@
   }
 
   const normalizedJoinDigits = $derived(normalizeSixDigitCode(joinInputRaw));
+  const joinDisabled = $derived(
+    receiveActive && receivePhase !== 'completed' && receivePhase !== 'error'
+  );
+  const activeCaretSlot = $derived(
+    pinFocused && !joinDisabled ? Math.min(normalizedJoinDigits.length, 5) : -1
+  );
   const activeHeaderTransport = $derived(sendTransport ?? receiveTransport);
 
   const sendLampColor = $derived.by(() => {
@@ -372,7 +381,11 @@
   });
 
   const sendPercent = $derived(
-    sendTotalBytes > 0 ? Math.min(100, (sendProgressBytes / sendTotalBytes) * 100) : sendPhase === 'completed' ? 100 : 0
+    sendTotalBytes > 0
+      ? Math.min(100, (sendProgressBytes / sendTotalBytes) * 100)
+      : sendPhase === 'completed'
+        ? 100
+        : 0
   );
   const receivePercent = $derived(
     receiveTotalBytes > 0
@@ -381,7 +394,9 @@
         ? 100
         : 0
   );
-  const ttlPercent = $derived(ttlTotal > 0 ? Math.max(0, (ttlRemaining / ttlTotal) * 100) : 0);
+  const litFuseTicks = $derived(
+    ttlTotal > 0 ? Math.max(0, Math.round((ttlRemaining / ttlTotal) * FUSE_TICKS.length)) : 0
+  );
 
   function translateDropError(err: DropErrorCode | 'emptyPayload'): string {
     return t(`errors.${err}`, { mb: configuredMaxRelayMb }, NS);
@@ -411,7 +426,10 @@
       {:else if activeHeaderTransport === 'relay'}
         <Badge tone="warning" dot>{t('transportRelay', undefined, NS)}</Badge>
       {/if}
-      <Badge tone="neutral">{t('cipherBadge', undefined, NS)}</Badge>
+      <span class="drop-cipher mono">
+        <Icon name="shield-check" size="xs" />
+        <span>{t('cipherBadge', undefined, NS)}</span>
+      </span>
     </div>
   </header>
 
@@ -426,15 +444,14 @@
       ondrop={handleDropFile}
     >
       <header class="drop-bay__head">
-        <div class="legend">
-          <span class="lamp" data-color={sendLampColor} aria-hidden="true"></span>
+        <div class="drop-bay__heading">
           <h3>{t('sendBayTitle', undefined, NS)}</h3>
-          <span class="legend__note">{t('sendBayNote', undefined, NS)}</span>
+          <p>{t('sendBayNote', undefined, NS)}</p>
         </div>
 
-        <Badge tone={sendFile ? 'warning' : 'neutral'}>
-          {sendFile ? t('modeFile', undefined, NS) : t('modeText', undefined, NS)}
-        </Badge>
+        {#if sendFile}
+          <Badge tone="warning">{t('modeFile', undefined, NS)}</Badge>
+        {/if}
       </header>
 
       {#if !sendActive}
@@ -497,28 +514,40 @@
       {:else}
         <div class="drop-bay__active">
           {#if issuedCode}
-            <div class="glass drop-code-well">
+            <div class="screen drop-code-well">
               <div class="drop-code-well__top">
                 <span class="drop-code-well__label">{t('codeLabel', undefined, NS)}</span>
-                <CopyButton text={issuedCode} />
+                {#if sendPhase === 'waiting'}
+                  <b class="drop-code-well__ttl mono">
+                    {t('ttlRemaining', { seconds: ttlRemaining }, NS)}
+                  </b>
+                {/if}
               </div>
+
               <div class="drop-code-well__digits mono" data-testid="drop-generated-code">
                 {formatSixDigitCode(issuedCode)}
               </div>
+
               {#if sendPhase === 'waiting'}
-                <Meter
-                  percent={ttlPercent}
-                  tone="warning"
-                  label={t('ttlRemaining', { seconds: ttlRemaining }, NS)}
-                  valueText={`${ttlRemaining}s`}
-                />
+                <div class="drop-code-well__fuse" aria-hidden="true">
+                  {#each FUSE_TICKS as tick (tick)}
+                    <i
+                      class="drop-fuse-dot"
+                      data-lit={tick < litFuseTicks ? 'true' : undefined}
+                      data-urgent={ttlRemaining <= 30 ? 'true' : undefined}
+                    ></i>
+                  {/each}
+                </div>
               {/if}
             </div>
           {/if}
 
           <div class="glass drop-status-well">
             <div class="drop-status-well__row">
-              <span class="drop-status-well__msg">{t(`sendStatus.${sendPhase}`, undefined, NS)}</span>
+              <div class="drop-status-well__lead">
+                <span class="lamp" data-color={sendLampColor} aria-hidden="true"></span>
+                <span class="drop-status-well__msg">{t(`sendStatus.${sendPhase}`, undefined, NS)}</span>
+              </div>
               <div class="drop-status-well__pills">
                 {#if sendTransport === 'p2p'}
                   <Badge tone="success">{t('transportP2p', undefined, NS)}</Badge>
@@ -550,6 +579,9 @@
           {/if}
 
           <div class="drop-bay__cta">
+            {#if issuedCode && sendPhase === 'waiting'}
+              <CopyButton text={issuedCode} label={t('copyCode', undefined, NS)} size="md" />
+            {/if}
             {#if sendPhase === 'completed' || sendPhase === 'error'}
               <Button variant="secondary" onclick={resetSendBay}>
                 <Icon name="refresh-cw" size="xs" />
@@ -566,26 +598,21 @@
       {/if}
     </section>
 
-    <!-- Right Bay: RX / Receive -->
+    <!-- Right Bay: RX / Receive with 3+3 tactile 6-digit pairing keyslots -->
     <section class="plate drop-bay" aria-label={t('receiveBayTitle', undefined, NS)}>
       <header class="drop-bay__head">
-        <div class="legend">
-          <span class="lamp" data-color={receiveLampColor} aria-hidden="true"></span>
+        <div class="drop-bay__heading">
           <h3>{t('receiveBayTitle', undefined, NS)}</h3>
-          <span class="legend__note">{t('receiveBayNote', undefined, NS)}</span>
+          <p>{t('receiveBayNote', undefined, NS)}</p>
         </div>
-
-        <Badge tone="neutral">
-          <Icon name="shield-check" size="xs" />
-          <span>E2EE</span>
-        </Badge>
       </header>
 
-      <form class="drop-join-form" onsubmit={handleJoinSubmit}>
-        <label class="drop-join-form__label" for="pk-drop-join-code">
+      <form class="drop-receive-body" onsubmit={handleJoinSubmit}>
+        <label class="sr-only" for="pk-drop-join-code">
           {t('joinCodeLabel', undefined, NS)}
         </label>
-        <div class="drop-join-form__row">
+
+        <div class="drop-pin-wrap" data-disabled={joinDisabled ? 'true' : undefined}>
           <input
             id="pk-drop-join-code"
             data-testid="drop-join-input"
@@ -593,109 +620,147 @@
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength="7"
-            class="glass drop-join-input mono"
-            placeholder={t('joinCodePlaceholder', undefined, NS)}
+            class="drop-pin-native"
             value={joinInputRaw}
-            disabled={receiveActive && receivePhase !== 'completed' && receivePhase !== 'error'}
+            disabled={joinDisabled}
+            onfocus={() => (pinFocused = true)}
+            onblur={() => (pinFocused = false)}
             oninput={handleJoinInput}
             onpaste={handleJoinPaste}
           />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              !isValidSixDigitCode(normalizedJoinDigits) ||
-              (receiveActive && receivePhase !== 'completed' && receivePhase !== 'error')
-            }
-          >
-            <Icon name="download" size="xs" />
-            <span>{t('joinAction', undefined, NS)}</span>
-          </Button>
-        </div>
-      </form>
 
-      {#if !receiveActive}
-        <div class="drop-bay__idle">
-          <EmptyState
-            title={t('receiveIdleTitle', undefined, NS)}
-            reason={t('receiveIdleReason', undefined, NS)}
-          />
-        </div>
-      {:else}
-        <div class="drop-bay__active">
-          <div class="glass drop-status-well">
-            <div class="drop-status-well__row">
-              <span class="drop-status-well__msg">
-                {t(`receiveStatus.${receivePhase}`, undefined, NS)}
+          <div class="drop-pin" aria-hidden="true">
+            {#each PIN_LEFT as idx (idx)}
+              {@const ch = normalizedJoinDigits[idx] ?? ''}
+              <span
+                class="glass drop-pin__slot mono"
+                data-filled={ch ? 'true' : undefined}
+                data-caret={activeCaretSlot === idx ? 'true' : undefined}
+              >
+                {ch}
               </span>
-              <div class="drop-status-well__pills">
-                {#if receiveTransport === 'p2p'}
-                  <Badge tone="success">{t('transportP2p', undefined, NS)}</Badge>
-                {:else if receiveTransport === 'relay'}
-                  <Badge tone="warning">{t('transportRelay', undefined, NS)}</Badge>
-                {/if}
-                {#if receiveFingerprint}
-                  <span class="drop-fp mono">
-                    {t('fingerprintLabel', { fp: receiveFingerprint }, NS)}
-                  </span>
-                {/if}
-              </div>
-            </div>
+            {/each}
 
-            {#if receivePhase === 'receiving' || (receivePhase === 'completed' && incomingMeta)}
-              <Meter
-                percent={receivePercent}
-                tone="success"
-                label={incomingMeta?.fileName ?? t('modeText', undefined, NS)}
-                valueText={`${formatBytes(receivePhase === 'completed' ? receiveTotalBytes : receiveProgressBytes)} / ${formatBytes(receiveTotalBytes)}`}
-              />
-            {/if}
+            <i class="drop-pin__sep"></i>
+
+            {#each PIN_RIGHT as idx (idx)}
+              {@const ch = normalizedJoinDigits[idx] ?? ''}
+              <span
+                class="glass drop-pin__slot mono"
+                data-filled={ch ? 'true' : undefined}
+                data-caret={activeCaretSlot === idx ? 'true' : undefined}
+              >
+                {ch}
+              </span>
+            {/each}
           </div>
+        </div>
 
-          {#if receiveError}
-            <div class="glass drop-alert" role="alert" data-testid="drop-receive-error">
-              {translateDropError(receiveError)}
-            </div>
-          {/if}
-
-          {#if receivedPayload}
-            {#if receivedPayload.kind === 'text'}
-              <div class="drop-result" data-testid="drop-received-text">
-                <CodeBlock
-                  label={t('receivedTextLabel', undefined, NS)}
-                  code={receivedPayload.text ?? ''}
-                  wrap
-                />
-              </div>
-            {:else}
-              <div class="glass drop-file-card" data-testid="drop-received-file">
-                <div class="drop-file-card__meta">
-                  <span class="drop-file-card__icon" aria-hidden="true">
-                    <Icon name="file-text" size="md" />
-                  </span>
-                  <div class="drop-file-card__text">
-                    <strong class="mono">{receivedPayload.fileName}</strong>
-                    <span class="mono">
-                      {formatBytes(receivedPayload.totalBytes)} · {receivedPayload.mimeType}
-                    </span>
-                  </div>
-                </div>
-                <Button variant="primary" size="sm" onclick={downloadReceivedFile}>
-                  <Icon name="download" size="xs" />
-                  <span>{t('saveFile', undefined, NS)}</span>
-                </Button>
-              </div>
-            {/if}
-          {/if}
+        {#if !receiveActive}
+          <div class="drop-receive-note">
+            <b>{t('receiveIdleTitle', undefined, NS)}</b>
+            <p>{t('receiveIdleReason', undefined, NS)}</p>
+          </div>
 
           <div class="drop-bay__cta">
-            <Button variant="secondary" onclick={resetReceiveBay}>
-              <Icon name="refresh-cw" size="xs" />
-              <span>{t('resetReceive', undefined, NS)}</span>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!isValidSixDigitCode(normalizedJoinDigits) || joinDisabled}
+            >
+              <Icon name="download" size="xs" />
+              <span>{t('joinAction', undefined, NS)}</span>
             </Button>
           </div>
-        </div>
-      {/if}
+        {:else}
+          <div class="drop-bay__active">
+            <div class="glass drop-status-well">
+              <div class="drop-status-well__row">
+                <div class="drop-status-well__lead">
+                  <span class="lamp" data-color={receiveLampColor} aria-hidden="true"></span>
+                  <span class="drop-status-well__msg">
+                    {t(`receiveStatus.${receivePhase}`, undefined, NS)}
+                  </span>
+                </div>
+                <div class="drop-status-well__pills">
+                  {#if receiveTransport === 'p2p'}
+                    <Badge tone="success">{t('transportP2p', undefined, NS)}</Badge>
+                  {:else if receiveTransport === 'relay'}
+                    <Badge tone="warning">{t('transportRelay', undefined, NS)}</Badge>
+                  {/if}
+                  {#if receiveFingerprint}
+                    <span class="drop-fp mono">
+                      {t('fingerprintLabel', { fp: receiveFingerprint }, NS)}
+                    </span>
+                  {/if}
+                </div>
+              </div>
+
+              {#if receivePhase === 'receiving' || (receivePhase === 'completed' && incomingMeta)}
+                <Meter
+                  percent={receivePercent}
+                  tone="success"
+                  label={incomingMeta?.fileName ?? t('modeText', undefined, NS)}
+                  valueText={`${formatBytes(receivePhase === 'completed' ? receiveTotalBytes : receiveProgressBytes)} / ${formatBytes(receiveTotalBytes)}`}
+                />
+              {/if}
+            </div>
+
+            {#if receiveError}
+              <div class="glass drop-alert" role="alert" data-testid="drop-receive-error">
+                {translateDropError(receiveError)}
+              </div>
+            {/if}
+
+            {#if receivedPayload}
+              {#if receivedPayload.kind === 'text'}
+                <div class="drop-result" data-testid="drop-received-text">
+                  <CodeBlock
+                    label={t('receivedTextLabel', undefined, NS)}
+                    code={receivedPayload.text ?? ''}
+                    wrap
+                  />
+                </div>
+              {:else}
+                <div class="glass drop-file-card" data-testid="drop-received-file">
+                  <div class="drop-file-card__meta">
+                    <span class="drop-file-card__icon" aria-hidden="true">
+                      <Icon name="file-text" size="md" />
+                    </span>
+                    <div class="drop-file-card__text">
+                      <strong class="mono">{receivedPayload.fileName}</strong>
+                      <span class="mono">
+                        {formatBytes(receivedPayload.totalBytes)} · {receivedPayload.mimeType}
+                      </span>
+                    </div>
+                  </div>
+                  <Button variant="primary" size="sm" onclick={downloadReceivedFile}>
+                    <Icon name="download" size="xs" />
+                    <span>{t('saveFile', undefined, NS)}</span>
+                  </Button>
+                </div>
+              {/if}
+            {/if}
+
+            <div class="drop-bay__cta">
+              {#if receivePhase === 'completed' || receivePhase === 'error'}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={!isValidSixDigitCode(normalizedJoinDigits)}
+                >
+                  <Icon name="download" size="xs" />
+                  <span>{t('joinAction', undefined, NS)}</span>
+                </Button>
+              {/if}
+              <Button variant="secondary" onclick={resetReceiveBay}>
+                <Icon name="refresh-cw" size="xs" />
+                <span>{t('resetReceive', undefined, NS)}</span>
+              </Button>
+            </div>
+          </div>
+        {/if}
+      </form>
     </section>
   </div>
 </div>
@@ -708,25 +773,23 @@
   }
 
   .drop-bar {
-    padding: 0 0.125rem 0.875rem;
-    border-bottom: 1px solid var(--hairline);
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
   }
 
   .drop-bar__title h2 {
-    font-size: 1.125rem;
+    font-size: 1.4375rem;
     font-weight: 700;
-    letter-spacing: 0.01em;
+    line-height: 1.25;
     color: var(--ink);
   }
 
   .drop-bar__title p {
-    margin-top: 0.25rem;
-    font-size: 0.78125rem;
+    margin-top: 0.1875rem;
+    font-size: 0.84375rem;
     color: var(--ink-3);
   }
 
@@ -737,49 +800,76 @@
     flex-wrap: wrap;
   }
 
+  .drop-cipher {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4375rem;
+    height: 2.125rem;
+    padding: 0 0.75rem;
+    border-radius: var(--r-key);
+    background: var(--plate);
+    color: var(--ink-2);
+    font-size: 0.75rem;
+    font-weight: 500;
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo);
+  }
+
   .drop-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--gap);
+    gap: 1.1875rem;
     align-items: stretch;
   }
 
   .drop-bay {
-    padding: 1.125rem 1.25rem 1.25rem;
+    padding: 1.375rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.125rem;
     transition: box-shadow 0.15s;
   }
 
   .drop-bay[data-drag='true'] {
     box-shadow:
       inset 0 0 0 2px var(--mint),
+      0 1px 0 var(--plate-lo),
       var(--plate-shadow);
   }
 
   .drop-bay__head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--hairline);
+  }
+
+  .drop-bay__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .drop-bay__heading h3 {
+    font-size: 1.1875rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .drop-bay__heading p {
+    font-size: 0.8125rem;
+    color: var(--ink-3);
   }
 
   .drop-bay__composer,
-  .drop-bay__active {
+  .drop-bay__active,
+  .drop-receive-body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.875rem;
-  }
-
-  .drop-bay__idle {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    gap: 0.9375rem;
   }
 
   .drop-bay__toolbar {
@@ -791,16 +881,17 @@
   }
 
   .drop-bay__hint {
-    font-size: 0.75rem;
+    font-size: 0.78125rem;
     color: var(--ink-3);
   }
 
   .drop-bay__cta {
     margin-top: auto;
-    padding-top: 0.25rem;
+    padding-top: 0.375rem;
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: 0.625rem;
+    flex-wrap: wrap;
   }
 
   .drop-file-card {
@@ -820,8 +911,8 @@
   }
 
   .drop-file-card__icon {
-    width: 2.375rem;
-    height: 2.375rem;
+    width: 2.5rem;
+    height: 2.5rem;
     border-radius: var(--r-key);
     background: var(--plate);
     color: var(--amber);
@@ -849,38 +940,70 @@
     color: var(--ink-3);
   }
 
+  /* Recessed pairing code instrument display */
   .drop-code-well {
-    padding: 0.9375rem 1.0625rem;
+    padding: 1.25rem 1.375rem 1.1875rem;
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: 1rem;
   }
 
   .drop-code-well__top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .drop-code-well__label {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--screen-ink-2);
+  }
+
+  .drop-code-well__ttl {
+    font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--ink-3);
+    color: var(--screen-ink);
   }
 
   .drop-code-well__digits {
-    font-size: 2.25rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
+    font-size: 2.9375rem;
+    font-weight: 650;
+    letter-spacing: 0.12em;
     text-align: center;
-    color: var(--amber);
+    color: var(--screen-amber);
+    line-height: 1.15;
     padding: 0.375rem 0;
     user-select: all;
   }
 
+  .drop-code-well__fuse {
+    display: grid;
+    grid-template-columns: repeat(36, minmax(0, 1fr));
+    gap: 4px;
+    align-items: center;
+  }
+
+  .drop-fuse-dot {
+    display: block;
+    width: 100%;
+    height: 0.375rem;
+    border-radius: 999px;
+    background: var(--screen-dot);
+    transition: background-color 180ms;
+  }
+
+  .drop-fuse-dot[data-lit='true'] {
+    background: var(--screen-amber);
+  }
+
+  .drop-fuse-dot[data-lit='true'][data-urgent='true'] {
+    background: var(--fault);
+  }
+
   .drop-status-well {
-    padding: 0.8125rem 0.9375rem;
+    padding: 0.8125rem 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.625rem;
@@ -894,8 +1017,14 @@
     flex-wrap: wrap;
   }
 
+  .drop-status-well__lead {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5625rem;
+  }
+
   .drop-status-well__msg {
-    font-size: 0.8125rem;
+    font-size: 0.84375rem;
     font-weight: 600;
     color: var(--ink);
   }
@@ -908,51 +1037,89 @@
   }
 
   .drop-fp {
-    font-size: 0.6875rem;
-    color: var(--ink-3);
-    padding: 0.125rem 0.4375rem;
-    border-radius: 0.25rem;
-    background: var(--plate);
-  }
-
-  .drop-join-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4375rem;
-  }
-
-  .drop-join-form__label {
     font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--ink-2);
-  }
-
-  .drop-join-form__row {
-    display: flex;
-    align-items: stretch;
-    gap: 0.625rem;
-  }
-
-  .drop-join-input {
-    flex: 1;
-    min-width: 0;
-    height: 2.5rem;
-    padding: 0 0.875rem;
-    border: 0;
-    font-size: 1.25rem;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-align: center;
-    color: var(--mint);
-  }
-
-  .drop-join-input::placeholder {
     color: var(--ink-3);
-    opacity: 0.45;
   }
 
-  .drop-join-input:disabled {
-    opacity: 0.55;
+  /* 3 + 3 tactile 6-digit pairing keyslots backed by a single accessible native input */
+  .drop-pin-wrap {
+    position: relative;
+  }
+
+  .drop-pin-wrap:hover:not([data-disabled='true']) .drop-pin__slot:first-child:not([data-filled='true']):not([data-caret='true']) {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--mint), transparent 55%),
+      inset 0 1.5px 4px var(--glass-shadow),
+      0 1px 0 var(--plate-hi);
+  }
+
+  .drop-pin-wrap[data-disabled='true'] {
+    opacity: 0.58;
+  }
+
+  .drop-pin-native {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    z-index: 2;
+    cursor: text;
+    font-size: 1.5rem;
+  }
+
+  .drop-pin-native:disabled {
+    cursor: not-allowed;
+  }
+
+  .drop-pin {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 0.625rem repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .drop-pin__sep {
+    grid-column: 4;
+  }
+
+  .drop-pin__slot {
+    height: 4.125rem;
+    border-radius: 0.6875rem;
+    display: grid;
+    place-items: center;
+    font-size: 1.75rem;
+    font-weight: 650;
+    color: var(--ink-3);
+    transition:
+      color 0.12s,
+      box-shadow 0.12s;
+  }
+
+  .drop-pin__slot[data-filled='true'] {
+    color: var(--ink);
+  }
+
+  .drop-pin__slot[data-caret='true'] {
+    box-shadow:
+      inset 0 0 0 2px var(--mint),
+      inset 0 2px 6px var(--glass-shadow);
+  }
+
+  .drop-receive-note {
+    font-size: 0.84375rem;
+    line-height: 1.6;
+    color: var(--ink-3);
+  }
+
+  .drop-receive-note b {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: var(--ink);
+    margin-bottom: 0.1875rem;
   }
 
   .drop-alert {
@@ -973,9 +1140,17 @@
     }
   }
 
-  @media (max-width: 520px) {
-    .drop-join-form__row {
-      flex-direction: column;
+  @media (max-width: 480px) {
+    .drop-pin {
+      gap: 0.3125rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) 0.25rem repeat(3, minmax(0, 1fr));
+    }
+    .drop-pin__slot {
+      height: 3.375rem;
+      font-size: 1.375rem;
+    }
+    .drop-code-well__digits {
+      font-size: 2.125rem;
     }
   }
 </style>
