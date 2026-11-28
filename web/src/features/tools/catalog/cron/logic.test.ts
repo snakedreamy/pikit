@@ -48,13 +48,15 @@ describe('cron parser & scheduler', () => {
     expect(runs.map((r) => r.getDate())).toEqual([15, 16]);
   });
 
-  it('fast-skips across years for leap-day schedules without stalling', () => {
+  it('fast-skips across years for leap-day schedules without stalling and returns all 8 runs', () => {
     const parsed = parseCronExpression('0 0 29 FEB *');
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     const base = new Date(2026, 0, 1, 0, 0, 0, 0);
-    const runs = computeNextCronRuns(parsed.cron, 2, base);
-    expect(runs.map((r) => r.getFullYear())).toEqual([2028, 2032]);
+    const runs = computeNextCronRuns(parsed.cron, 8, base);
+    expect(runs.map((r) => r.getFullYear())).toEqual([
+      2028, 2032, 2036, 2040, 2044, 2048, 2052, 2056,
+    ]);
   });
 
   it('rejects invalid expressions', () => {

@@ -125,8 +125,3 @@ export function buildUrlFromComponents(comp: Omit<UrlComponents, 'origin'>): Bui
     return { ok: false, error: 'invalid_url' };
   }
 }
-
-export function serializeUrlComponents(comp: Omit<UrlComponents, 'origin'>): string | null {
-  const res = buildUrlFromComponents(comp);
-  return res.ok ? res.url : null;
-}

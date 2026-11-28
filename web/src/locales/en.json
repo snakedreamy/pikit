@@ -25,7 +25,8 @@
     "themeSystem": "System",
     "themeDark": "Dark",
     "themeLight": "Light",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "logoutError": "Sign-out request failed to reach server; view locked locally—retry or clear cookies"
   },
   "palette": {
     "title": "Quick Jump",

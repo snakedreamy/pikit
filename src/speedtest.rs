@@ -169,10 +169,11 @@ impl SpeedtestService {
             guard.day = today;
             guard.used_bytes = 0;
         }
-        if guard.used_bytes >= limit {
+        if guard.used_bytes >= limit || delta > limit - guard.used_bytes {
+            guard.used_bytes = limit;
             return false;
         }
-        guard.used_bytes = guard.used_bytes.saturating_add(delta);
+        guard.used_bytes += delta;
         true
     }
 
@@ -588,10 +589,15 @@ mod tests {
         resv.as_mut().unwrap().consume(4 * 1024 * 1024);
         drop(resv);
 
-        let (granted_after_refund, _resv2) = svc
+        let (granted_after_refund, resv2) = svc
             .reserve_download_quota(16 * 1024 * 1024)
             .expect("6 MiB should have been refunded");
         assert_eq!(granted_after_refund, 6 * 1024 * 1024);
+        drop(resv2); // Refund the unconsumed 6 MiB so 6 MiB remain available
+
+        // Uploading a chunk larger than the remaining 6 MiB must fail and cap usage at exact daily limit
+        assert!(!svc.record_quota_bytes(8 * 1024 * 1024));
+        assert_eq!(svc.daily_quota.lock().unwrap().used_bytes, gib);
     }
 
     #[test]

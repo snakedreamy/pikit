@@ -3,7 +3,7 @@
 // - Up to 6 parallel download streams (`ReadableStream` byte counting, adaptive chunk sizing)
 // - Up to 4 parallel upload streams (`POST /api/speed/up` server-confirmed byte counting starting at 128 KiB,
 //   eliminating false 0 Mbps readings caused by local OS/proxy socket buffering on port-forwarded links)
-// - 200ms oscilloscope ticks, 2s warmup window, checkpoint-based sustained throughput; aborts immediately on HTTP 429.
+// - 100ms oscilloscope ticks (~300ms sliding instantaneous window), 2s warmup window, checkpoint-based sustained throughput; aborts immediately on HTTP 429.
 
 import {
   computePingAndJitter,
@@ -119,12 +119,15 @@ export async function runSpeedtestSession(
   );
   const downStreams = Math.min(6, maxStreams);
   const upStreams = Math.min(4, maxStreams);
-  const tightRequestBudget = rpmBudget !== null && rpmBudget < 120;
+  const tightRequestBudget = rpmBudget !== null && rpmBudget < 180;
+  // Cap per-phase HTTP requests strictly within the 1-minute token bucket so fast links / small chunk caps never self-trigger 429
+  const perPhaseRequestCap =
+    rpmBudget !== null ? Math.max(1, Math.floor((rpmBudget - pingCount - 2) / 2)) : Infinity;
   const maxDownBytes = Math.max(MIB, Math.floor((opts.maxDownloadMb ?? 256) * MIB));
   const maxUpBytes = Math.max(64 * KIB, Math.floor((opts.maxUploadMb ?? 64) * MIB));
   const durationMs = opts.phaseDurationMs ?? 10_000;
   const warmupMs = opts.warmupMs ?? 2_000;
-  const sampleMs = opts.sampleIntervalMs ?? 200;
+  const sampleMs = opts.sampleIntervalMs ?? 100;
 
   const state: SpeedtestProgress = {
     phase: 'ping',
@@ -185,6 +188,8 @@ export async function runSpeedtestSession(
   state.downloadMbps = await runDownloadPhase({
     streams: downStreams,
     maxChunkBytes: maxDownBytes,
+    tightRequestBudget,
+    maxRequests: perPhaseRequestCap,
     durationMs,
     warmupMs,
     sampleMs,
@@ -208,6 +213,7 @@ export async function runSpeedtestSession(
     streams: upStreams,
     maxChunkBytes: maxUpBytes,
     tightRequestBudget,
+    maxRequests: perPhaseRequestCap,
     durationMs,
     warmupMs,
     sampleMs,
@@ -229,6 +235,7 @@ interface TransferPhaseArgs {
   streams: number;
   maxChunkBytes: number;
   tightRequestBudget?: boolean;
+  maxRequests?: number;
   durationMs: number;
   warmupMs: number;
   sampleMs: number;
@@ -241,6 +248,8 @@ async function runDownloadPhase(args: TransferPhaseArgs): Promise<number> {
   const {
     streams,
     maxChunkBytes,
+    tightRequestBudget,
+    maxRequests = Infinity,
     durationMs,
     warmupMs,
     sampleMs,
@@ -253,21 +262,24 @@ async function runDownloadPhase(args: TransferPhaseArgs): Promise<number> {
   signal.addEventListener('abort', onOuterAbort, { once: true });
 
   let totalBytes = 0;
-  let lastSampleBytes = 0;
+  let issuedRequests = 0;
   const startTs = performance.now();
-  let lastSampleTs = startTs;
   const checkpoints: ByteCheckpoint[] = [];
   let fatalError: unknown = null;
 
   const timer = window.setInterval(() => {
     const now = performance.now();
     const elapsedMs = now - startTs;
-    const dtSec = Math.max(0.001, (now - lastSampleTs) / 1000);
-    const deltaBytes = totalBytes - lastSampleBytes;
-    lastSampleBytes = totalBytes;
-    lastSampleTs = now;
-
     checkpoints.push({ elapsedMs, totalBytes });
+
+    // Compute sliding ~300ms window rate to smooth OS socket burst jitter while keeping fast ramp response
+    const lookbackIdx = Math.max(0, checkpoints.length - 4);
+    const refPt =
+      checkpoints.length <= 3
+        ? { elapsedMs: 0, totalBytes: 0 }
+        : checkpoints[lookbackIdx];
+    const dtSec = Math.max(0.001, (elapsedMs - refPt.elapsedMs) / 1000);
+    const deltaBytes = Math.max(0, totalBytes - refPt.totalBytes);
     const instantMbps = (deltaBytes * 8) / (dtSec * 1_000_000);
     const sustained = computeSustainedThroughputMbps(checkpoints, warmupMs);
     onTick(instantMbps, sustained);
@@ -282,9 +294,13 @@ async function runDownloadPhase(args: TransferPhaseArgs): Promise<number> {
   const worker = async () => {
     const maxChunk = Math.max(256 * KIB, maxChunkBytes);
     const minChunk = Math.min(256 * KIB, maxChunk);
-    let chunkBytes = Math.min(8 * MIB, maxChunk);
+    let chunkBytes = Math.min(tightRequestBudget ? 64 * MIB : 8 * MIB, maxChunk);
 
     while (!phaseCtrl.signal.aborted && performance.now() - startTs < durationMs) {
+      if (issuedRequests >= maxRequests) {
+        break;
+      }
+      issuedRequests += 1;
       const reqStart = performance.now();
       try {
         const res = await fetch(`/api/speed/down?size=${chunkBytes}&r=${nonce()}`, {
@@ -356,6 +372,7 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
     streams,
     maxChunkBytes,
     tightRequestBudget,
+    maxRequests = Infinity,
     durationMs,
     warmupMs,
     sampleMs,
@@ -370,6 +387,7 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
   let acceptingNew = true;
   let drainStarted = false;
   let hardAbortTimer: number | undefined;
+  let issuedRequests = 0;
   const UPLOAD_DRAIN_GRACE_MS = 650;
 
   const onOuterAbort = () => {
@@ -431,6 +449,10 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
     let lastReqDurationMs = 0;
 
     while (acceptingNew && !phaseCtrl.signal.aborted) {
+      if (issuedRequests >= maxRequests) {
+        acceptingNew = false;
+        break;
+      }
       const remainingMs = durationMs - (performance.now() - startTs);
       const sendBytes = computeTailUploadChunkBytes(
         chunkBytes,
@@ -441,6 +463,7 @@ async function runUploadPhase(args: TransferPhaseArgs): Promise<number> {
       );
       if (sendBytes <= 0) break;
 
+      issuedRequests += 1;
       const reqStart = performance.now();
       try {
         const blob = getBlob(sendBytes);

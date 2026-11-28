@@ -1,6 +1,6 @@
 {
   "title": "局域网加密闪传",
-  "subtitle": "双端实时 6 位码配对 · 一次性 X25519 + 256 位认证加密 · 服务端零数据存储（跨不可信网络可核对校验指纹）",
+  "subtitle": "双端实时 6 位码配对 · 一次性 X25519 + 256 位认证加密 · 服务端零数据落盘",
   "cipherBadge": "X25519 · ChaCha20-Poly1305",
   "transportP2p": "WebRTC 局域网直连",
   "transportRelay": "零存储密文流中继",
@@ -16,6 +16,7 @@
   "pickFile": "选择文件",
   "removeFile": "移除文件",
   "generateCode": "生成 6 位配对码",
+  "copyCode": "复制配对码",
   "cancelSession": "取消并销毁配对码",
   "resetSend": "继续发送",
   "codeLabel": "一次性 6 位数字配对码",
@@ -37,8 +38,8 @@
   "saveFile": "保存文件到本地",
   "receivedTextLabel": "已校验解密的文本内容",
   "receivedFileLabel": "已校验解密的文件载荷",
-  "receiveIdleTitle": "等待输入 6 位配对码",
-  "receiveIdleReason": "在发送端点击“生成 6 位配对码”，在上方输入或直接粘贴 6 位数字即可自动建连；配对码仅限单次尝试，输错或断开即刻销毁。",
+  "receiveIdleTitle": "在发送端生成 6 位配对码",
+  "receiveIdleReason": "在上方输入或直接粘贴 6 位数字，输满后自动建立端到端加密连接；配对码仅限单次尝试，输错即刻销毁。",
   "receiveStatus": {
     "connecting": "正在接入配对槽位…",
     "verifying": "正在双向校验会话密钥确认码…",

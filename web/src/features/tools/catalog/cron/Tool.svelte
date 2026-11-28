@@ -3,6 +3,7 @@
   import { Button, CopyButton, Field, Input } from '../../../../ui';
   import {
     computeNextCronRuns,
+    CRON_LOOKAHEAD_YEARS,
     describeCron,
     formatLocalDateTimeWithOffset,
     parseCronExpression,
@@ -83,9 +84,13 @@
     </div>
 
     <div class="cr-runs">
-      <span class="cr-label">{t('nextRunsLabel', { count: RUN_COUNT }, NS)}</span>
+      <span class="cr-label">
+        {upcoming.length > 0 && upcoming.length < RUN_COUNT
+          ? t('nextRunsPartialLabel', { found: upcoming.length, years: CRON_LOOKAHEAD_YEARS }, NS)
+          : t('nextRunsLabel', { count: RUN_COUNT }, NS)}
+      </span>
       {#if upcoming.length === 0}
-        <p class="glass cr-empty">{t('noUpcoming', undefined, NS)}</p>
+        <p class="glass cr-empty">{t('noUpcoming', { years: CRON_LOOKAHEAD_YEARS }, NS)}</p>
       {:else}
         <ol class="glass cr-list mono">
           {#each upcoming as dt, idx (dt.getTime())}

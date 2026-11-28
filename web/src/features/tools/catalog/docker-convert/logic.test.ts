@@ -103,4 +103,24 @@ describe('docker run / podman run -> compose.yaml & Podman Quadlet converter', (
     const ambiguousFlag = convertDockerRun('docker run --mystery-flag alpine echo hi');
     expect(ambiguousFlag.ok).toBe(false);
   });
+
+  it('omits Quadlet Restart= when --restart is absent and maps on-failure:N retry caps explicitly', () => {
+    const noRestart = convertDockerRun('docker run --name oneshot alpine:3.21 echo done');
+    expect(noRestart.ok).toBe(true);
+    if (noRestart.ok) {
+      expect(noRestart.quadletUnit).not.toContain('Restart=');
+    }
+
+    const boundedRetry = convertDockerRun(
+      'docker run --name worker --restart on-failure:3 alpine:3.21 /bin/worker'
+    );
+    expect(boundedRetry.ok).toBe(true);
+    if (boundedRetry.ok) {
+      expect(boundedRetry.composeYaml).toContain('restart: on-failure:3');
+      expect(boundedRetry.quadletUnit).toContain('Restart=on-failure');
+      expect(boundedRetry.quadletUnit).toContain('StartLimitIntervalSec=0');
+      expect(boundedRetry.quadletUnit).toContain('StartLimitBurst=3');
+      expect(boundedRetry.warnings.length).toBeGreaterThan(0);
+    }
+  });
 });

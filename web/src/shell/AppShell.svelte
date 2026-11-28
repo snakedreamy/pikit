@@ -25,7 +25,7 @@
     THEME_DEFINITIONS,
     type ThemeMode,
   } from '../lib/theme.svelte';
-  import { BrandMark, Button, Icon, Select } from '../ui';
+  import { BrandMark, Button, Icon, pushToast, Select } from '../ui';
   import CommandPalette from './CommandPalette.svelte';
 
   interface Props {
@@ -163,7 +163,7 @@
     try {
       await logoutSession();
     } catch {
-      // Clear local session state even if the network or reverse proxy fails during logout
+      pushToast(t('topbar.logoutError'), 'danger');
     } finally {
       onloggedout?.();
     }
@@ -194,7 +194,7 @@
 
       <div class="top__center">
         {#if effectiveAuthed}
-          <nav class="glass top__nav" aria-label={t('nav.primary')}>
+          <nav class="well top__nav" aria-label={t('nav.primary')}>
             {#each navItems as item (item.id)}
               <a
                 href={item.href}
@@ -219,7 +219,7 @@
         {#if effectiveAuthed}
           <button
             type="button"
-            class="glass top__search"
+            class="top__search"
             aria-label={t('topbar.searchTrigger')}
             onclick={() => (paletteOpen = true)}
           >
@@ -292,18 +292,15 @@
   }
 
   .bench__header-wrap {
-    position: sticky;
-    top: 0;
-    z-index: var(--z-topbar);
-    background: var(--chassis);
-    border-bottom: 1px solid var(--hairline);
+    max-width: var(--layout-max, 88rem);
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 1.5rem;
   }
 
   .top {
-    max-width: var(--layout-max, 88rem);
-    margin: 0 auto;
     min-height: var(--topbar-h);
-    padding: 0.4375rem var(--gap);
+    padding: 0.625rem 0;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -319,14 +316,16 @@
   .top__brand {
     display: inline-flex;
     align-items: center;
-    gap: 0.5625rem;
+    gap: 0.625rem;
     white-space: nowrap;
   }
 
   .top__brand h1 {
-    font-size: 1rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+    font-stretch: 94%;
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
   }
 
   .top__center {
@@ -336,28 +335,29 @@
   .top__nav {
     display: inline-grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(5.125rem, 1fr);
-    gap: 0.25rem;
+    grid-auto-columns: minmax(5.375rem, 1fr);
+    gap: 0.1875rem;
     padding: 0.25rem;
-    border-radius: var(--r-key);
+    border-radius: 0.75rem;
   }
 
   .top__nav-item {
-    height: 1.875rem;
-    padding: 0 0.75rem;
+    height: 2.0625rem;
+    padding: 0 0.9375rem;
     gap: 0.4375rem;
-    border-radius: calc(var(--r-key) - 2px);
+    border-radius: 0.5rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8125rem;
+    font-size: 0.90625rem;
     font-weight: 500;
     color: var(--ink-2);
     white-space: nowrap;
     transition:
       background-color 0.14s,
       color 0.14s,
-      box-shadow 0.14s;
+      box-shadow 0.14s,
+      transform 0.1s;
   }
 
   .top__nav-icon {
@@ -377,10 +377,12 @@
   .top__nav-item[aria-current='page'] {
     background: var(--plate-raised);
     color: var(--ink);
-    font-weight: 600;
+    font-weight: 650;
     box-shadow:
       inset 0 1px 0 var(--plate-hi),
-      0 1.5px 0 var(--key-bevel);
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo),
+      0 3px 8px -3px rgb(0 0 0 / 0.35);
   }
 
   .top__nav-item[aria-current='page'] .top__nav-icon {
@@ -391,39 +393,59 @@
     justify-self: end;
     display: flex;
     align-items: center;
-    gap: 0.4375rem;
+    gap: 0.5rem;
     flex-wrap: wrap;
   }
 
   .top__search {
     display: inline-flex;
     align-items: center;
-    gap: 0.4375rem;
-    height: 2rem;
-    padding: 0 0.5rem 0 0.6875rem;
+    gap: 0.5rem;
+    height: 2.25rem;
+    padding: 0 0.625rem 0 0.75rem;
     border: 0;
+    border-radius: var(--r-key);
+    background: var(--plate);
     color: var(--ink-2);
-    font-size: 0.8125rem;
-    transition: color 0.14s;
+    font-size: 0.84375rem;
+    font-weight: 500;
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim),
+      0 1px 0 var(--plate-lo);
+    transition:
+      color 0.14s,
+      background-color 0.14s,
+      transform 0.1s,
+      box-shadow 0.1s;
   }
 
   .top__search:hover {
     color: var(--ink);
+    background: var(--plate-raised);
+  }
+
+  .top__search:active {
+    transform: translateY(1px);
+    box-shadow:
+      inset 0 1px 0 var(--plate-hi),
+      inset 0 0 0 1px var(--plate-rim);
   }
 
   .top__search kbd {
-    padding: 0.0625rem 0.375rem;
+    padding: 0.125rem 0.375rem;
     border-radius: 0.25rem;
-    background: var(--plate);
+    background: var(--well);
     color: var(--ink-3);
     font-size: 0.6875rem;
+    font-weight: 500;
   }
 
   .bench__main {
     width: 100%;
     max-width: var(--layout-max, 88rem);
     margin: 0 auto;
-    padding: 1.625rem var(--gap) 2.5rem;
+    padding: 1.75rem 1.5rem 3rem;
     transition:
       transform 0.18s var(--ease-out),
       filter 0.18s var(--ease-out);
@@ -439,15 +461,18 @@
     max-width: var(--layout-max, 88rem);
     width: 100%;
     margin: 0 auto;
-    padding: 0.5rem var(--gap) 1.25rem;
+    padding: 0.5rem 1.5rem 1.5rem;
     text-align: center;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--ink-3);
   }
 
   @media (max-width: 920px) {
-    .bench__header-wrap {
-      position: relative;
+    .bench__header-wrap,
+    .bench__main,
+    .bench__foot {
+      padding-left: 1rem;
+      padding-right: 1rem;
     }
     .top {
       grid-template-columns: 1fr auto;
@@ -460,6 +485,7 @@
     }
     .top__nav {
       width: 100%;
+      grid-auto-columns: minmax(0, 1fr);
     }
   }
 </style>

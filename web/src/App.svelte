@@ -44,8 +44,10 @@
   }
 
   /**
-   * Immediately locks the UI and wipes cached private bookmarks upon logout or HTTP 401,
-   * without waiting for a subsequent `/api/meta` round-trip that might fail with 5xx/offline.
+   * Immediately locks the UI and wipes cached private bookmarks upon logout or HTTP 401.
+   * Deliberately avoids firing an immediate `/api/meta` follow-up request so a failed logout
+   * (where the server never received `POST /api/auth/logout` and the cookie is still valid)
+   * cannot silently re-unlock the protected UI behind the user's back.
    */
   function handleSessionInvalidated() {
     paletteOpen = false;
@@ -65,7 +67,6 @@
           auth: { enabled: true, authenticated: false },
           features: { system: false, perCore: false, speedtest: false, drop: false },
         };
-    void refreshMeta();
   }
 
   onMount(() => {

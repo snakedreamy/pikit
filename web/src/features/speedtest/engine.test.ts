@@ -197,8 +197,10 @@ describe('speedtest engine upload drain', () => {
     ).rejects.toBeInstanceOf(SpeedtestRunError);
   });
 
-  it('scales down ping count and parallel streams under tight requestsPerMinute budget', async () => {
+  it('scales down ping count, streams, and total request count under tight requestsPerMinute budget', async () => {
     let pingCalls = 0;
+    let downCalls = 0;
+    let upCalls = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -208,9 +210,11 @@ describe('speedtest engine upload drain', () => {
           return Promise.resolve(new Response('ok', { status: 200 }));
         }
         if (url.startsWith('/api/speed/down')) {
+          downCalls += 1;
           return Promise.resolve(new Response(new Uint8Array(64 * 1024), { status: 200 }));
         }
         if (url.startsWith('/api/speed/up')) {
+          upCalls += 1;
           const bodyBlob = init?.body as Blob | undefined;
           return Promise.resolve(
             new Response(JSON.stringify({ receivedBytes: bodyBlob?.size ?? 65536 }), {
@@ -233,14 +237,19 @@ describe('speedtest engine upload drain', () => {
         pingCount: 20,
         parallelStreams: 6,
         requestsPerMinute: 60,
-        phaseDurationMs: 60,
-        warmupMs: 10,
-        sampleIntervalMs: 30,
+        maxDownloadMb: 1,
+        maxUploadMb: 1,
+        phaseDurationMs: 250,
+        warmupMs: 20,
+        sampleIntervalMs: 50,
         onProgress: () => {},
       },
       ctrl.signal
     );
     expect(res.phase).toBe('done');
     expect(pingCalls).toBe(12);
+    expect(downCalls).toBeGreaterThan(0);
+    expect(upCalls).toBeGreaterThan(0);
+    expect(pingCalls + downCalls + upCalls).toBeLessThanOrEqual(60);
   });
 });

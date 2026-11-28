@@ -93,4 +93,26 @@ code_ttl_seconds = 180`;
     expect(convertStructuredData('{"huge": 1e400}', 'json', 'json').ok).toBe(false);
     expect(convertStructuredData('huge: 1e400', 'yaml', 'json').ok).toBe(false);
   });
+
+  it('rejects duplicate/colliding keys and preserves or rejects high-precision decimal literals without silent rounding', () => {
+    // Colliding YAML scalar keys (`1` and `"1"`) and duplicate JSON keys must fail explicitly
+    expect(convertStructuredData('1: "num"\n"1": "str"\n', 'yaml', 'json').ok).toBe(false);
+    expect(convertStructuredData('{"dup": 1, "dup": 2}', 'json', 'yaml').ok).toBe(false);
+
+    // Exact integer-valued decimal (`9223372036854775807.0`) preserves full 64-bit integer value
+    const exactDecimalJson = convertStructuredData(
+      '{"max_i64": 9223372036854775807.0}',
+      'json',
+      'yaml'
+    );
+    expect(exactDecimalJson.ok).toBe(true);
+    if (exactDecimalJson.ok) {
+      expect(exactDecimalJson.output).toContain('9223372036854775807');
+      expect(exactDecimalJson.output).not.toContain('9223372036854776000');
+    }
+
+    // Non-integer decimal exceeding IEEE-754 double precision must fail instead of silently rounding
+    expect(convertStructuredData('{"frac": 9007199254740993.5}', 'json', 'yaml').ok).toBe(false);
+    expect(convertStructuredData('frac: 9007199254740993.5\n', 'yaml', 'json').ok).toBe(false);
+  });
 });

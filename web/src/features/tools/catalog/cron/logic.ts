@@ -197,6 +197,8 @@ function matchesDay(cron: ParsedCron, d: Date): boolean {
   return domMatch && dowMatch;
 }
 
+export const CRON_LOOKAHEAD_YEARS = 40;
+
 /**
  * Computes the next `count` firing instants in the user's local timezone (hierarchical calendar skipping across leap years and DST).
  */
@@ -207,7 +209,7 @@ export function computeNextCronRuns(
 ): Date[] {
   const results: Date[] = [];
   let cursor = new Date(Math.floor(fromDate.getTime() / 1000) * 1000 + 1000);
-  const maxTimestamp = fromDate.getTime() + 8 * 366 * 24 * 3600 * 1000;
+  const maxTimestamp = fromDate.getTime() + CRON_LOOKAHEAD_YEARS * 366 * 24 * 3600 * 1000;
 
   while (results.length < count && cursor.getTime() <= maxTimestamp) {
     if (!cron.mon.set.has(cursor.getMonth() + 1)) {

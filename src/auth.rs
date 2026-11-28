@@ -20,7 +20,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
-use tokio::sync::Semaphore;
+use tokio::sync::{watch, Semaphore};
 use tracing::warn;
 
 use crate::app::AppState;
@@ -149,6 +149,7 @@ pub struct AuthService {
     login_limiter: DefaultKeyedRateLimiter<IpAddr>,
     argon2_sem: Arc<Semaphore>,
     active_sessions: Mutex<ActiveSessionTable>,
+    revocation_tx: watch::Sender<u64>,
 }
 
 impl AuthService {
@@ -166,6 +167,7 @@ impl AuthService {
         let quota = Quota::per_minute(
             NonZeroU32::new(LOGIN_ATTEMPTS_PER_MINUTE).expect("LOGIN_ATTEMPTS_PER_MINUTE > 0"),
         );
+        let (revocation_tx, _) = watch::channel(0u64);
 
         Self {
             enabled: cfg.enabled,
@@ -180,6 +182,7 @@ impl AuthService {
                 next_seq: 0,
                 entries: HashMap::new(),
             }),
+            revocation_tx,
         }
     }
 
@@ -197,12 +200,20 @@ impl AuthService {
         self.login_limiter.shrink_to_fit();
 
         let now = current_unix_secs();
-        let mut guard = self
-            .active_sessions
-            .lock()
-            .expect("active_sessions mutex poisoned");
-        guard.entries.retain(|_, &mut (_, exp)| exp > now);
-        guard.entries.shrink_to_fit();
+        let changed = {
+            let mut guard = self
+                .active_sessions
+                .lock()
+                .expect("active_sessions mutex poisoned");
+            let before = guard.entries.len();
+            guard.entries.retain(|_, &mut (_, exp)| exp > now);
+            let removed_any = guard.entries.len() != before;
+            guard.entries.shrink_to_fit();
+            removed_any
+        };
+        if changed {
+            self.revocation_tx.send_modify(|v| *v = v.wrapping_add(1));
+        }
     }
 
     pub fn check_login_rate_limit(&self, ip: IpAddr) -> bool {
@@ -245,11 +256,56 @@ impl AuthService {
         let Some((nonce_b64, _exp)) = self.verify_token_signature_and_exp(token) else {
             return;
         };
-        let mut guard = self
+        let removed = {
+            let mut guard = self
+                .active_sessions
+                .lock()
+                .expect("active_sessions mutex poisoned");
+            guard.entries.remove(&nonce_b64).is_some()
+        };
+        if removed {
+            self.revocation_tx.send_modify(|v| *v = v.wrapping_add(1));
+        }
+    }
+
+    /// Extracts the active authenticated `(nonce_b64, remaining_ttl)` from request cookies when `auth.enabled = true`.
+    /// When multiple valid cookies exist, picks the one with the furthest expiration timestamp.
+    pub fn extract_session_lease(&self, headers: &HeaderMap) -> Option<(String, Duration)> {
+        if !self.enabled {
+            return None;
+        }
+        let now = current_unix_secs();
+        let guard = self
             .active_sessions
             .lock()
             .expect("active_sessions mutex poisoned");
-        guard.entries.remove(&nonce_b64);
+        let mut best: Option<(String, u64)> = None;
+        for_each_cookie(headers, SESSION_COOKIE_NAME, |token| {
+            if let Some((nonce_b64, _)) = self.verify_token_signature_and_exp(token) {
+                if let Some(&(_, exp)) = guard.entries.get(&nonce_b64) {
+                    if exp > now && best.as_ref().is_none_or(|(_, b_exp)| exp > *b_exp) {
+                        best = Some((nonce_b64, exp));
+                    }
+                }
+            }
+        });
+        best.map(|(nonce, exp)| (nonce, Duration::from_secs(exp.saturating_sub(now))))
+    }
+
+    pub fn is_session_nonce_active(&self, nonce_b64: &str) -> bool {
+        let now = current_unix_secs();
+        let guard = self
+            .active_sessions
+            .lock()
+            .expect("active_sessions mutex poisoned");
+        guard
+            .entries
+            .get(nonce_b64)
+            .is_some_and(|&(_, exp)| exp > now)
+    }
+
+    pub fn subscribe_revocations(&self) -> watch::Receiver<u64> {
+        self.revocation_tx.subscribe()
     }
 
     /// Performs constant-time username comparison and Argon2id password verification on the blocking pool.
@@ -303,12 +359,17 @@ impl AuthService {
         let payload = format!("{exp}.{nonce_b64}");
         let sig = self.sign_payload(&payload);
 
+        let mut evicted = false;
         {
             let mut guard = self
                 .active_sessions
                 .lock()
                 .expect("active_sessions mutex poisoned");
+            let before = guard.entries.len();
             guard.entries.retain(|_, &mut (_, e)| e > now);
+            if guard.entries.len() != before {
+                evicted = true;
+            }
             if guard.entries.len() >= MAX_ACTIVE_SESSIONS {
                 if let Some(oldest_key) = guard
                     .entries
@@ -317,11 +378,15 @@ impl AuthService {
                     .map(|(k, _)| k.clone())
                 {
                     guard.entries.remove(&oldest_key);
+                    evicted = true;
                 }
             }
             guard.next_seq = guard.next_seq.saturating_add(1);
             let seq = guard.next_seq;
             guard.entries.insert(nonce_b64, (seq, exp));
+        }
+        if evicted {
+            self.revocation_tx.send_modify(|v| *v = v.wrapping_add(1));
         }
 
         format!("{payload}.{sig}")

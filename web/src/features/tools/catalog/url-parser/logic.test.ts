@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUrlFromComponents, parseUrlDeep, serializeUrlComponents } from './logic';
+import { buildUrlFromComponents, parseUrlDeep } from './logic';
 
 describe('URL deep parser & Query parameter rebuilder', () => {
   it('breaks down protocol, credentials, host, port, path, query rows, and hash', () => {
@@ -22,10 +22,12 @@ describe('URL deep parser & Query parameter rebuilder', () => {
     // Disable second row and add a UTF-8 parameter -> rebuilds valid encoded URL
     parsed.data.params[1].enabled = false;
     parsed.data.params.push({ id: 'q-new', key: 'q', value: '中文 测试', enabled: true });
-    const rebuilt = serializeUrlComponents(parsed.data);
-    expect(rebuilt).toBe(
-      'https://ops:s3cr3t@gw.example.ts.net:8443/api/v1/items?tag=arm64&tag=linux&q=%E4%B8%AD%E6%96%87+%E6%B5%8B%E8%AF%95#metrics'
-    );
+    const rebuilt = buildUrlFromComponents(parsed.data);
+    expect(rebuilt).toEqual({
+      ok: true,
+      origin: 'https://gw.example.ts.net:8443',
+      url: 'https://ops:s3cr3t@gw.example.ts.net:8443/api/v1/items?tag=arm64&tag=linux&q=%E4%B8%AD%E6%96%87+%E6%B5%8B%E8%AF%95#metrics',
+    });
   });
 
   it('rejects malformed URLs and out-of-range ports while preserving empty-key query params', () => {
@@ -35,9 +37,11 @@ describe('URL deep parser & Query parameter rebuilder', () => {
     const emptyKeyParsed = parseUrlDeep('https://example.com/search?=fallback&k=1');
     expect(emptyKeyParsed.ok).toBe(true);
     if (!emptyKeyParsed.ok) return;
-    expect(serializeUrlComponents(emptyKeyParsed.data)).toBe(
-      'https://example.com/search?=fallback&k=1'
-    );
+    expect(buildUrlFromComponents(emptyKeyParsed.data)).toEqual({
+      ok: true,
+      origin: 'https://example.com',
+      url: 'https://example.com/search?=fallback&k=1',
+    });
 
     const badPort = buildUrlFromComponents({ ...emptyKeyParsed.data, port: '70000' });
     expect(badPort).toEqual({ ok: false, error: 'invalid_port' });

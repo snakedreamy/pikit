@@ -15,11 +15,11 @@ use bytes::Bytes;
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, Semaphore};
 use tracing::warn;
 
 use crate::app::AppState;
-use crate::auth::PeerIp;
+use crate::auth::{AuthService, PeerIp};
 use crate::config::DropConfig;
 use crate::security::{extract_client_ip, is_same_origin_api_request, IpNet};
 
@@ -69,6 +69,33 @@ enum RelayFrame {
     Text(Utf8Bytes),
     Binary(Bytes),
     Abort,
+}
+
+struct DropSessionAuthLease {
+    auth: Arc<AuthService>,
+    nonce_b64: String,
+    expires_at: tokio::time::Instant,
+    revocation_rx: watch::Receiver<u64>,
+}
+
+async fn wait_session_invalidated(lease: &mut Option<DropSessionAuthLease>) {
+    let Some(l) = lease.as_mut() else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    loop {
+        if !l.auth.is_session_nonce_active(&l.nonce_b64) {
+            return;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep_until(l.expires_at) => return,
+            res = l.revocation_rx.changed() => {
+                if res.is_err() || !l.auth.is_session_nonce_active(&l.nonce_b64) {
+                    return;
+                }
+            }
+        }
+    }
 }
 
 /// Ephemeral zero-storage pairing & ciphertext relay service for `/drop`.
@@ -296,6 +323,25 @@ pub async fn get_drop_ws(
         );
     };
 
+    let auth_lease = if state.auth.is_enabled() {
+        let Some((nonce_b64, rem_ttl)) = state.auth.extract_session_lease(&headers) else {
+            return http_error(
+                StatusCode::UNAUTHORIZED,
+                None,
+                "unauthorized",
+                "Authentication required or session expired",
+            );
+        };
+        Some(DropSessionAuthLease {
+            auth: Arc::clone(&state.auth),
+            nonce_b64,
+            expires_at: tokio::time::Instant::now() + rem_ttl,
+            revocation_rx: state.auth.subscribe_revocations(),
+        })
+    } else {
+        None
+    };
+
     let ws = match ws {
         Ok(upgrade) => upgrade,
         Err(rejection) => return rejection.into_response(),
@@ -304,7 +350,9 @@ pub async fn get_drop_ws(
     let drop_svc = Arc::clone(&state.drop);
     ws.max_message_size(MAX_RELAY_BINARY_BYTES)
         .max_frame_size(MAX_RELAY_BINARY_BYTES)
-        .on_upgrade(move |socket| handle_drop_socket(socket, drop_svc, client_ip, handshake_permit))
+        .on_upgrade(move |socket| {
+            handle_drop_socket(socket, drop_svc, client_ip, handshake_permit, auth_lease)
+        })
 }
 
 #[derive(Deserialize)]
@@ -374,6 +422,7 @@ fn is_allowed_paired_control_type(msg_type: &str) -> bool {
             | "rtc_answer"
             | "rtc_ice"
             | "transport_mode"
+            | "keepalive"
             | "done"
             | "abort"
     )
@@ -454,13 +503,22 @@ async fn handle_drop_socket(
     svc: Arc<DropService>,
     client_ip: IpAddr,
     handshake_permit: OwnedSemaphorePermit,
+    mut auth_lease: Option<DropSessionAuthLease>,
 ) {
-    let cmd = match read_initial_command_with_timeout(&mut socket, INITIAL_COMMAND_TIMEOUT).await {
-        Ok(c) => c,
-        Err(("closed", _)) => return,
-        Err((code, msg)) => {
-            send_error_and_close(&mut socket, code, msg).await;
+    let cmd = tokio::select! {
+        _ = wait_session_invalidated(&mut auth_lease) => {
+            send_error_and_close(&mut socket, "unauthorized", "Session expired or logged out").await;
             return;
+        }
+        res = read_initial_command_with_timeout(&mut socket, INITIAL_COMMAND_TIMEOUT) => {
+            match res {
+                Ok(c) => c,
+                Err(("closed", _)) => return,
+                Err((code, msg)) => {
+                    send_error_and_close(&mut socket, code, msg).await;
+                    return;
+                }
+            }
         }
     };
     drop(handshake_permit);
@@ -509,6 +567,11 @@ async fn handle_drop_socket(
 
             let joined = loop {
                 tokio::select! {
+                    _ = wait_session_invalidated(&mut auth_lease) => {
+                        svc.remove_waiting_room(&code);
+                        send_error_and_close(&mut socket, "unauthorized", "Session expired or logged out").await;
+                        return;
+                    }
                     res = &mut join_rx => {
                         match res {
                             Ok(bundle) => break bundle,
@@ -567,6 +630,7 @@ async fn handle_drop_socket(
                 joined.relay_bytes,
                 svc.max_relay_bytes(),
                 joined.shared_permit,
+                auth_lease,
             )
             .await;
         }
@@ -643,6 +707,7 @@ async fn handle_drop_socket(
                 relay_bytes,
                 svc.max_relay_bytes(),
                 shared_permit,
+                auth_lease,
             )
             .await;
         }
@@ -656,6 +721,7 @@ async fn pump_paired_session(
     relay_bytes: Arc<AtomicU64>,
     max_relay_bytes: u64,
     _held_room_permit: Arc<OwnedSemaphorePermit>,
+    mut auth_lease: Option<DropSessionAuthLease>,
 ) {
     let mut control_bytes_sent: usize = 0;
     let session_ceiling = tokio::time::Instant::now() + MAX_PAIRED_SESSION_DURATION;
@@ -664,6 +730,15 @@ async fn pump_paired_session(
 
     loop {
         tokio::select! {
+            _ = wait_session_invalidated(&mut auth_lease) => {
+                let _ = tx_to_peer.try_send(RelayFrame::Abort);
+                send_error_and_close(
+                    &mut socket,
+                    "unauthorized",
+                    "Session expired or logged out",
+                ).await;
+                break;
+            }
             outbound = rx_from_peer.recv() => {
                 match outbound {
                     Some(RelayFrame::Text(txt)) => {
@@ -1137,5 +1212,58 @@ per_ip_requests_per_minute = 120
         let realistic_wire = 180 + exact_1mib + chunks * DROP_CHUNK_WIRE_OVERHEAD_BYTES + 80;
         assert!(realistic_wire <= svc.max_relay_bytes());
         assert!(svc.max_relay_bytes() < exact_1mib + 8192);
+    }
+
+    #[tokio::test]
+    async fn revoking_auth_session_terminates_active_drop_sockets_immediately() {
+        let (addr, state) = spawn_test_server(
+            r#"
+version = 1
+[auth]
+enabled = true
+username = "admin"
+password = "super-secret-password"
+"#,
+        )
+        .await;
+        let origin = format!("http://127.0.0.1:{}", addr.port());
+        let token = state.auth.issue_session_token();
+        let cookie = format!("pikbay_session={token}");
+        let pub_a = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let salt_a = "BBBBBBBBBBBBBBBBBBBBBB";
+
+        let mut sender = MiniWsClient::connect(addr, Some(&origin), Some(&cookie))
+            .await
+            .unwrap();
+        sender
+            .send_text(&format!(
+                r#"{{"type":"create","pubKey":"{pub_a}","salt":"{salt_a}"}}"#
+            ))
+            .await;
+        let created = sender.recv_json().await;
+        assert_eq!(created["type"], "created");
+        let code = created["code"].as_str().unwrap().to_string();
+
+        // Revoking the session in another tab must immediately close the active waiting-room socket and burn the room
+        state.auth.revoke_session_token(&token);
+        let msg = tokio::time::timeout(Duration::from_secs(2), sender.recv_json())
+            .await
+            .expect("revoked session should terminate WS immediately");
+        assert_eq!(msg["type"], "error");
+        assert_eq!(msg["code"], "unauthorized");
+
+        // The waiting room must also have been destroyed
+        let token2 = state.auth.issue_session_token();
+        let cookie2 = format!("pikbay_session={token2}");
+        let mut joiner = MiniWsClient::connect(addr, Some(&origin), Some(&cookie2))
+            .await
+            .unwrap();
+        joiner
+            .send_text(&format!(
+                r#"{{"type":"join","code":"{code}","pubKey":"{pub_a}","salt":"{salt_a}"}}"#
+            ))
+            .await;
+        let join_res = joiner.recv_json().await;
+        assert_eq!(join_res["code"], "invalid_or_expired");
     }
 }

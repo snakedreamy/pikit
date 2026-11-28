@@ -25,7 +25,8 @@
     "themeSystem": "跟随系统",
     "themeDark": "深色主题",
     "themeLight": "浅色主题",
-    "logout": "退出"
+    "logout": "退出",
+    "logoutError": "退出请求未能送达服务端，当前页面已锁定；请重试退出或清除浏览器 Cookie"
   },
   "palette": {
     "title": "全局快搜",

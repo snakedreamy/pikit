@@ -3,7 +3,16 @@
 // Preserves 64-bit integers (`BigInt`) losslessly across all three formats without IEEE 754 precision loss.
 
 import { parse as parseToml, stringify as stringifyToml, TomlError } from 'smol-toml';
-import { LineCounter, parse as parseYaml, stringify as stringifyYaml, YAMLError } from 'yaml';
+import {
+  isMap,
+  isPair,
+  isScalar,
+  isSeq,
+  LineCounter,
+  parseDocument,
+  stringify as stringifyYaml,
+  YAMLError,
+} from 'yaml';
 
 export type DataFormat = 'yaml' | 'json' | 'toml';
 export type SourceFormatOption = 'auto' | DataFormat;
@@ -85,38 +94,55 @@ function setOwnDataProperty(target: Record<string, unknown>, key: string, value:
   });
 }
 
+interface CanonicalDecimal {
+  negative: boolean;
+  sigDigits: string;
+  scale10: number;
+}
+
+function parseCanonicalDecimal(raw: string): CanonicalDecimal | null {
+  const m = raw.trim().match(/^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/);
+  if (!m) return null;
+  const [, signRaw, mantissa, expRaw] = m;
+  const exp = expRaw !== undefined ? Number(expRaw) : 0;
+  if (!Number.isSafeInteger(exp)) return null;
+
+  const dotIdx = mantissa.indexOf('.');
+  const intPart = dotIdx >= 0 ? mantissa.slice(0, dotIdx) : mantissa;
+  const fracPart = dotIdx >= 0 ? mantissa.slice(dotIdx + 1) : '';
+  const combined = (intPart + fracPart).replace(/^0+/, '');
+  if (combined === '') {
+    return { negative: false, sigDigits: '0', scale10: 0 };
+  }
+  const sigDigits = combined.replace(/0+$/, '');
+  const trailingZeros = combined.length - sigDigits.length;
+  return {
+    negative: signRaw === '-',
+    sigDigits,
+    scale10: exp - fracPart.length + trailingZeros,
+  };
+}
+
 /**
- * Parses a JSON numeric token without silent precision loss or silent Infinity coercion:
- * - Exact integers (including scientific notation such as `9.007199254740993e15`) outside IEEE 754 safe integer bounds stay `bigint`.
- * - Numbers overflowing IEEE 754 `double` (e.g. `1e400`) throw an explicit range error instead of becoming `Infinity` -> `null`.
+ * Parses a numeric literal without silent precision loss or silent Infinity coercion:
+ * - Exact mathematical integers (including `9223372036854775807.0` and `9.007199254740993e15`)
+ *   outside IEEE 754 safe integer bounds stay `bigint`.
+ * - Non-integer decimals whose significant digits cannot round-trip losslessly through IEEE 754 `double`
+ *   (e.g. `9007199254740993.5`) or overflow `double` (`1e400`) throw an explicit error instead of rounding silently.
  */
 function parseJsonNumberLossless(raw: string): number | bigint {
-  if (/^-?\d+$/.test(raw)) {
-    const big = BigInt(raw);
-    return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(raw) : big;
-  }
-
-  const sciMatch = raw.match(/^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/);
-  if (sciMatch) {
-    const [, sign, intPart, fracPart = '', expRaw] = sciMatch;
-    const exp = Number(expRaw);
-    if (Number.isSafeInteger(exp)) {
-      const combined = intPart + fracPart;
-      const stripped = combined.replace(/^0+/, '');
-      if (stripped === '') {
-        return 0;
-      }
-      const withoutTrailingZeros = stripped.replace(/0+$/, '');
-      const trailingZeros = stripped.length - withoutTrailingZeros.length;
-      const netShift = exp - fracPart.length + trailingZeros;
-      if (
-        netShift >= 0 &&
-        withoutTrailingZeros.length + netShift <= MAX_SCIENTIFIC_INT_DIGITS
-      ) {
-        const expanded = `${sign}${withoutTrailingZeros}${'0'.repeat(netShift)}`;
-        const big = BigInt(expanded);
-        return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(big) : big;
-      }
+  const dec = parseCanonicalDecimal(raw);
+  if (dec) {
+    if (dec.sigDigits === '0') {
+      return 0;
+    }
+    if (
+      dec.scale10 >= 0 &&
+      dec.sigDigits.length + dec.scale10 <= MAX_SCIENTIFIC_INT_DIGITS
+    ) {
+      const expanded = `${dec.negative ? '-' : ''}${dec.sigDigits}${'0'.repeat(dec.scale10)}`;
+      const big = BigInt(expanded);
+      return big >= MIN_SAFE_BIG && big <= MAX_SAFE_BIG ? Number(big) : big;
     }
   }
 
@@ -124,13 +150,28 @@ function parseJsonNumberLossless(raw: string): number | bigint {
   if (!Number.isFinite(num)) {
     throw new Error(`Numeric value ${raw} overflows IEEE 754 double precision`);
   }
+
+  if (dec && dec.sigDigits !== '0') {
+    const roundTrip = parseCanonicalDecimal(String(num));
+    if (
+      !roundTrip ||
+      roundTrip.negative !== dec.negative ||
+      roundTrip.sigDigits !== dec.sigDigits ||
+      roundTrip.scale10 !== dec.scale10
+    ) {
+      throw new Error(
+        `Numeric value ${raw} exceeds IEEE 754 double precision and cannot be converted without rounding`
+      );
+    }
+  }
   return num;
 }
 
 /**
  * Normalizes `bigint` values that fit safely within IEEE 754 `Number` back to `number`,
  * keeping only integers outside `[-2^53 + 1, 2^53 - 1]` as `bigint`, and converts `Map`
- * instances into plain objects with safe own properties (preserving keys like `__proto__`).
+ * instances into plain objects with safe own properties (rejecting distinct keys that collide
+ * after stringification, such as numeric `1` and string `"1"`).
  */
 function normalizeSafeBigInts(val: unknown): unknown {
   if (typeof val === 'bigint') {
@@ -145,7 +186,14 @@ function normalizeSafeBigInts(val: unknown): unknown {
   if (val instanceof Map) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of val.entries()) {
-      setOwnDataProperty(out, String(k), normalizeSafeBigInts(v));
+      const strKey =
+        k !== null && typeof k === 'object' ? JSON.stringify(k) : String(k);
+      if (Object.prototype.hasOwnProperty.call(out, strKey)) {
+        throw new Error(
+          `Duplicate object key "${strKey}" after string conversion (distinct non-string keys cannot be converted losslessly)`
+        );
+      }
+      setOwnDataProperty(out, strKey, normalizeSafeBigInts(v));
     }
     return out;
   }
@@ -247,9 +295,16 @@ function parseJsonLosslessWithLocation(source: string): unknown {
       }
       while (i < n) {
         skipWs();
+        const keyOffset = i;
         const key = readString();
         skipWs();
         i += 1; // ':'
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          throw Object.assign(
+            new Error(`Duplicate JSON object key "${key}" cannot be converted without losing values`),
+            { location: offsetToLineColumn(source, keyOffset) }
+          );
+        }
         setOwnDataProperty(obj, key, readValue());
         skipWs();
         if (source[i] === ',') {
@@ -356,6 +411,50 @@ function findNullPath(val: unknown, currentPath = '$'): string | null {
   return null;
 }
 
+function parseYamlLossless(source: string, lineCounter: LineCounter): unknown {
+  const doc = parseDocument(source, {
+    lineCounter,
+    intAsBigInt: true,
+    uniqueKeys: true,
+  });
+  if (doc.errors.length > 0) {
+    throw doc.errors[0];
+  }
+
+  const walkAst = (node: unknown) => {
+    if (!node) return;
+    if (isScalar(node)) {
+      if (typeof node.value === 'number' && node.range) {
+        const rawSlice = source.slice(node.range[0], node.range[1]).trim();
+        const cleaned = rawSlice.replace(/_/g, '');
+        if (/^[+-]?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(cleaned) || /^[+-]?\d+[eE][+-]?\d+$/.test(cleaned)) {
+          node.value = parseJsonNumberLossless(cleaned);
+        } else if (!Number.isFinite(node.value)) {
+          throw new Error(`Numeric value ${rawSlice} overflows IEEE 754 double precision`);
+        }
+      }
+      return;
+    }
+    if (isMap(node)) {
+      for (const pair of node.items) {
+        if (isPair(pair)) {
+          walkAst(pair.key);
+          walkAst(pair.value);
+        }
+      }
+      return;
+    }
+    if (isSeq(node)) {
+      for (const item of node.items) {
+        walkAst(item);
+      }
+    }
+  };
+
+  walkAst(doc.contents);
+  return normalizeSafeBigInts(doc.toJS({ mapAsMap: true }));
+}
+
 export function convertStructuredData(
   input: string,
   sourceOption: SourceFormatOption,
@@ -377,9 +476,7 @@ export function convertStructuredData(
     } else if (detectedSource === 'toml') {
       value = normalizeSafeBigInts(parseToml(input, { integersAsBigInt: 'asNeeded' }));
     } else {
-      value = normalizeSafeBigInts(
-        parseYaml(input, { lineCounter: yamlLineCounter, intAsBigInt: true, mapAsMap: true })
-      );
+      value = parseYamlLossless(input, yamlLineCounter);
     }
   } catch (err) {
     if (err instanceof TomlError) {

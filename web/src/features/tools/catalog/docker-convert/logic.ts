@@ -665,28 +665,67 @@ function systemdEscapeValue(fieldName: string, v: string): string {
   return escaped;
 }
 
-function mapSystemdRestart(dockerRestart?: string): string {
-  if (!dockerRestart || dockerRestart === 'no') return 'no';
-  assertSafeQuadletToken('--restart', dockerRestart);
-  if (dockerRestart.startsWith('on-failure')) return 'on-failure';
-  // Both `always` and `unless-stopped` map cleanly to `always` under systemd service management
-  return 'always';
+interface MappedQuadletRestart {
+  systemdRestart?: string;
+  startLimitBurst?: number;
+  warning?: string;
 }
 
-function renderPodmanQuadlet(p: ParsedContainerRun, opts?: DockerConvertOptions): string {
+function mapSystemdRestart(dockerRestart?: string): MappedQuadletRestart {
+  if (!dockerRestart) {
+    return {};
+  }
+  const safe = assertSafeQuadletToken('--restart', dockerRestart);
+  if (safe === 'no') {
+    return { systemdRestart: 'no' };
+  }
+  if (safe === 'on-failure') {
+    return { systemdRestart: 'on-failure' };
+  }
+  const retryMatch = safe.match(/^on-failure:(\d+)$/);
+  if (retryMatch) {
+    const burst = Number(retryMatch[1]);
+    if (!Number.isSafeInteger(burst) || burst < 0) {
+      throw new Error(`Invalid --restart retry count: ${safe}`);
+    }
+    if (burst === 0) {
+      return { systemdRestart: 'on-failure' };
+    }
+    return {
+      systemdRestart: 'on-failure',
+      startLimitBurst: burst,
+      warning: `Mapped --restart ${safe} to systemd Restart=on-failure with StartLimitBurst=${burst} (StartLimitIntervalSec=0).`,
+    };
+  }
+  if (safe === 'always' || safe === 'unless-stopped') {
+    return { systemdRestart: 'always' };
+  }
+  throw new Error(`Unsupported --restart policy: ${safe}`);
+}
+
+function renderPodmanQuadlet(
+  p: ParsedContainerRun,
+  opts: DockerConvertOptions | undefined,
+  warningsOut: string[]
+): string {
   const safeName = assertSafeQuadletToken('--name', p.name);
   const safeImage = assertSafeQuadletToken('image', p.image);
+  const restartMapping = mapSystemdRestart(p.restart);
+  if (restartMapping.warning) {
+    warningsOut.push(restartMapping.warning);
+  }
 
   const lines: string[] = [
     '[Unit]',
     `Description=${safeName} container`,
     'After=network-online.target',
     'Wants=network-online.target',
-    '',
-    '[Container]',
-    `ContainerName=${safeName}`,
-    `Image=${safeImage}`,
   ];
+  if (restartMapping.startLimitBurst !== undefined) {
+    lines.push('StartLimitIntervalSec=0');
+    lines.push(`StartLimitBurst=${restartMapping.startLimitBurst}`);
+  }
+  lines.push('', '[Container]', `ContainerName=${safeName}`, `Image=${safeImage}`);
 
   if (opts?.quadletAutoUpdate) {
     lines.push('AutoUpdate=registry');
@@ -769,11 +808,17 @@ function renderPodmanQuadlet(p: ParsedContainerRun, opts?: DockerConvertOptions)
     lines.push(`Exec=${p.command.map((arg) => systemdEscapeValue('command', arg)).join(' ')}`);
   }
 
-  lines.push('', '[Service]');
-  lines.push(`Restart=${mapSystemdRestart(p.restart ?? 'on-failure')}`);
-  lines.push('RestartSec=5');
-  if (p.memory) {
-    lines.push(`MemoryMax=${assertSafeQuadletToken('--memory', p.memory).toUpperCase()}`);
+  if (restartMapping.systemdRestart || p.memory) {
+    lines.push('', '[Service]');
+    if (restartMapping.systemdRestart) {
+      lines.push(`Restart=${restartMapping.systemdRestart}`);
+      if (restartMapping.systemdRestart !== 'no') {
+        lines.push('RestartSec=5');
+      }
+    }
+    if (p.memory) {
+      lines.push(`MemoryMax=${assertSafeQuadletToken('--memory', p.memory).toUpperCase()}`);
+    }
   }
 
   lines.push('', '[Install]', 'WantedBy=default.target');
@@ -794,8 +839,9 @@ export function convertDockerRun(
       return { ok: false, error: 'Command contains no arguments' };
     }
     const parsed = parseContainerRunTokens(tokens);
+    const warnings = [...parsed.warnings];
     const parsedMounts = parsed.mounts.map(parseDockerMountSpec);
-    const quadletUnit = renderPodmanQuadlet(parsed, options);
+    const quadletUnit = renderPodmanQuadlet(parsed, options, warnings);
     const composeYaml = renderComposeYaml(parsed, parsedMounts);
     const safeUnitBase = parsed.name.replace(/[^a-zA-Z0-9_.@-]/g, '-') || 'app';
 
@@ -805,7 +851,7 @@ export function convertDockerRun(
       unitFileName: `${safeUnitBase}.container`,
       composeYaml,
       quadletUnit,
-      warnings: parsed.warnings,
+      warnings,
     };
   } catch (err) {
     return {

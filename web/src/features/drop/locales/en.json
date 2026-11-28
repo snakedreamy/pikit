@@ -1,6 +1,6 @@
 {
   "title": "Encrypted Peer Drop",
-  "subtitle": "Real-time 6-digit pairing · Ephemeral X25519 + 256-bit AEAD · Zero server storage (compare SAS codes across untrusted networks)",
+  "subtitle": "Real-time 6-digit pairing · Ephemeral X25519 + 256-bit AEAD · Zero server storage",
   "cipherBadge": "X25519 · ChaCha20-Poly1305",
   "transportP2p": "WebRTC P2P Direct",
   "transportRelay": "Zero-Storage WS Relay",
@@ -16,6 +16,7 @@
   "pickFile": "Choose File",
   "removeFile": "Clear File",
   "generateCode": "Generate 6-Digit Code",
+  "copyCode": "Copy Code",
   "cancelSession": "Cancel & Burn Code",
   "resetSend": "New Transfer",
   "codeLabel": "One-Time 6-Digit Pairing Code",
@@ -37,8 +38,8 @@
   "saveFile": "Save File",
   "receivedTextLabel": "Verified Decrypted Text",
   "receivedFileLabel": "Verified Decrypted File",
-  "receiveIdleTitle": "Awaiting 6-Digit Pairing Code",
-  "receiveIdleReason": "Open Drop on the sending device, generate a 6-digit code, and type or paste it above. Wrong codes burn the room on the first attempt.",
+  "receiveIdleTitle": "Generate a code on the sending device",
+  "receiveIdleReason": "Type or paste the 6 digits above to establish an end-to-end encrypted link automatically. Wrong codes burn the room on the first attempt.",
   "receiveStatus": {
     "connecting": "Connecting to pairing room…",
     "verifying": "Confirming mutual PIN MAC…",

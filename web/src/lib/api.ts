@@ -82,8 +82,11 @@ export async function loginWithPassword(
 }
 
 export async function logoutSession(): Promise<void> {
-  await fetch('/api/auth/logout', {
+  const res = await fetch('/api/auth/logout', {
     method: 'POST',
     headers: { Accept: 'application/json' },
   });
+  if (!res.ok) {
+    throw new ApiHttpError(res.status, 'logout_failed', `HTTP ${res.status}`);
+  }
 }

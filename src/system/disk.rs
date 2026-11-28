@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 
@@ -103,12 +103,10 @@ fn scope_matches_fs(scope: DiskProbeScope, is_net: bool) -> bool {
     }
 }
 
-/// Samples storage telemetry: probes `[[system.disks]]` when explicitly configured,
-/// otherwise auto-discovers and deduplicates real mounted disks on the host or container.
-pub fn sample_disks(configured: &[DiskConfig]) -> Vec<DiskTelemetryDto> {
-    sample_disks_scoped(configured, DiskProbeScope::All)
-}
+const MAX_SYMLINK_HOPS: usize = 16;
 
+/// Samples storage telemetry within `scope`: probes `[[system.disks]]` when explicitly configured,
+/// otherwise auto-discovers and deduplicates real mounted disks on the host or container.
 pub fn sample_disks_scoped(
     configured: &[DiskConfig],
     scope: DiskProbeScope,
@@ -117,11 +115,97 @@ pub fn sample_disks_scoped(
         let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
         return configured
             .iter()
-            .filter(|d| scope_matches_fs(scope, is_path_on_network_mount(&mountinfo, &d.path)))
+            .filter(|d| {
+                let is_net = is_configured_path_on_network_mount_with(&mountinfo, &d.path, |p| {
+                    std::fs::read_link(p).ok()
+                });
+                scope_matches_fs(scope, is_net)
+            })
             .map(sample_single_disk)
             .collect();
     }
     discover_and_sample_disks(scope)
+}
+
+fn normalize_lexical_abs(path: &Path) -> PathBuf {
+    let mut out = PathBuf::from("/");
+    for comp in path.components() {
+        match comp {
+            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
+            Component::ParentDir => {
+                out.pop();
+                if out.as_os_str().is_empty() {
+                    out.push("/");
+                }
+            }
+            Component::Normal(seg) => out.push(seg),
+        }
+    }
+    out
+}
+
+/// Classifies whether `raw_path` targets a network mount without ever invoking syscalls inside a
+/// remote filesystem: walks path components from `/` one step at a time while on local mounts, and
+/// returns `true` the instant a symlink target enters a network mount prefix in `mountinfo`.
+fn is_configured_path_on_network_mount_with<F>(
+    mountinfo: &str,
+    raw_path: &str,
+    mut read_link_fn: F,
+) -> bool
+where
+    F: FnMut(&Path) -> Option<PathBuf>,
+{
+    let mut current = normalize_lexical_abs(Path::new(raw_path));
+    for _ in 0..=MAX_SYMLINK_HOPS {
+        let cur_str = current.to_string_lossy();
+        if is_path_on_network_mount(mountinfo, &cur_str) {
+            return true;
+        }
+        if is_path_on_network_mount(mountinfo, "/") {
+            return true;
+        }
+
+        let segments: Vec<_> = current
+            .components()
+            .filter_map(|c| match c {
+                Component::Normal(s) => Some(s.to_os_string()),
+                _ => None,
+            })
+            .collect();
+
+        let mut prefix = PathBuf::from("/");
+        let mut redirected: Option<PathBuf> = None;
+
+        for (idx, seg) in segments.iter().enumerate() {
+            prefix.push(seg);
+            let prefix_str = prefix.to_string_lossy();
+            if is_path_on_network_mount(mountinfo, &prefix_str) {
+                return true;
+            }
+
+            if let Some(link_target) = read_link_fn(&prefix) {
+                let base = if link_target.is_absolute() {
+                    link_target
+                } else {
+                    let mut parent = prefix.clone();
+                    parent.pop();
+                    parent.join(link_target)
+                };
+                let mut next_path = base;
+                for rest in &segments[(idx + 1)..] {
+                    next_path.push(rest);
+                }
+                redirected = Some(normalize_lexical_abs(&next_path));
+                break;
+            }
+        }
+
+        match redirected {
+            Some(next) => current = next,
+            None => return false,
+        }
+    }
+    false
 }
 
 fn is_path_on_network_mount(mountinfo: &str, target_path: &str) -> bool {
@@ -614,11 +698,40 @@ mod tests {
                 label: "Offline".to_string(),
             },
         ];
-        let out = sample_disks(&items);
+        let out = sample_disks_scoped(&items, DiskProbeScope::All);
         assert_eq!(out.len(), 2);
         assert!(out[0].error.is_none());
         assert!(out[0].total_bytes > 0);
         assert!(out[1].error.is_some());
+    }
+
+    #[test]
+    fn isolates_symlinked_network_mounts_without_probing_inside_remote_fs() {
+        let mountinfo = "\
+31 1 259:2 / / rw,relatime - ext4 /dev/nvme0n1p2 rw
+99 31 0:62 / /mnt/dead-nfs rw,relatime - nfs4 10.0.0.9:/tank rw
+";
+        let is_net = is_configured_path_on_network_mount_with(
+            mountinfo,
+            "/srv/nas-link/media/movies",
+            |p| {
+                let s = p.to_string_lossy();
+                assert!(
+                    !s.starts_with("/mnt/dead-nfs"),
+                    "must never invoke syscalls inside the remote network mount: {s}"
+                );
+                if s == "/srv/nas-link" {
+                    Some(PathBuf::from("../mnt/dead-nfs/export"))
+                } else {
+                    None
+                }
+            },
+        );
+        assert!(is_net);
+
+        let is_local =
+            is_configured_path_on_network_mount_with(mountinfo, "/srv/local-dir", |_| None);
+        assert!(!is_local);
     }
 
     #[test]
@@ -679,7 +792,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn auto_discovers_at_least_one_real_disk_on_current_machine() {
-        let auto = sample_disks(&[]);
+        let auto = sample_disks_scoped(&[], DiskProbeScope::All);
         assert!(!auto.is_empty());
         assert!(auto.iter().all(|d| d.total_bytes > 0));
     }

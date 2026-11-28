@@ -89,8 +89,10 @@ export interface DropSessionHandle {
 }
 
 const P2P_CONNECT_TIMEOUT_MS = 3000;
+const P2P_SIGNAL_KEEPALIVE_MS = 60_000;
 const DC_BUFFER_HIGH_WATER = 512 * 1024;
 const DC_BUFFER_LOW_WATER = 128 * 1024;
+const DC_STALL_TIMEOUT_MS = 30_000;
 const WS_BUFFER_HIGH_WATER = 512 * 1024;
 /** Maximum in-browser receive size (512 MiB for P2P files; 16 MiB for UTF-8 text) so mobile tabs never OOM. */
 export const DROP_MAX_P2P_FILE_BYTES = 512 * 1024 * 1024;
@@ -115,6 +117,8 @@ function mapServerErrorCode(raw: unknown): DropErrorCode {
       return 'rate_limited';
     case 'relay_limit_exceeded':
       return 'relay_limit_exceeded';
+    case 'unauthorized':
+      return 'unauthorized';
     case 'aborted':
       return 'aborted';
     default:
@@ -128,24 +132,60 @@ async function waitForWsDrain(ws: WebSocket, isCancelled: () => boolean): Promis
   }
 }
 
-async function waitForDcDrain(dc: RTCDataChannel, isCancelled: () => boolean): Promise<void> {
-  if (dc.bufferedAmount <= DC_BUFFER_HIGH_WATER) return;
-  dc.bufferedAmountLowThreshold = DC_BUFFER_LOW_WATER;
-  await new Promise<void>((resolve) => {
-    let timer = 0;
-    const done = () => {
-      window.clearTimeout(timer);
-      dc.removeEventListener('bufferedamountlow', done);
-      dc.removeEventListener('close', done);
-      resolve();
-    };
-    dc.addEventListener('bufferedamountlow', done);
-    dc.addEventListener('close', done);
-    timer = window.setTimeout(done, 40);
-    if (isCancelled() || dc.bufferedAmount <= DC_BUFFER_HIGH_WATER) {
-      done();
+export async function waitForDcDrain(
+  dc: Pick<
+    RTCDataChannel,
+    | 'bufferedAmount'
+    | 'bufferedAmountLowThreshold'
+    | 'readyState'
+    | 'addEventListener'
+    | 'removeEventListener'
+  >,
+  isCancelled: () => boolean,
+  stallTimeoutMs = DC_STALL_TIMEOUT_MS
+): Promise<void> {
+  let stallDeadline = performance.now() + stallTimeoutMs;
+  let lastBuffered = dc.bufferedAmount;
+
+  while (
+    !isCancelled() &&
+    dc.readyState === 'open' &&
+    dc.bufferedAmount > DC_BUFFER_HIGH_WATER
+  ) {
+    if (dc.bufferedAmount < lastBuffered) {
+      lastBuffered = dc.bufferedAmount;
+      stallDeadline = performance.now() + stallTimeoutMs;
+    } else if (performance.now() >= stallDeadline) {
+      throw new Error('RTCDataChannel send buffer stalled');
     }
-  });
+
+    dc.bufferedAmountLowThreshold = DC_BUFFER_LOW_WATER;
+    await new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+      const done = () => {
+        if (timer !== undefined) globalThis.clearTimeout(timer);
+        dc.removeEventListener('bufferedamountlow', done);
+        dc.removeEventListener('close', done);
+        dc.removeEventListener('error', done);
+        resolve();
+      };
+      dc.addEventListener('bufferedamountlow', done);
+      dc.addEventListener('close', done);
+      dc.addEventListener('error', done);
+      timer = globalThis.setTimeout(done, 25);
+      if (
+        isCancelled() ||
+        dc.readyState !== 'open' ||
+        dc.bufferedAmount <= DC_BUFFER_HIGH_WATER
+      ) {
+        done();
+      }
+    });
+  }
+
+  if (!isCancelled() && dc.readyState !== 'open') {
+    throw new Error('RTCDataChannel closed while draining');
+  }
 }
 
 async function checkIfUnauthorized(onUnauthorized?: () => void): Promise<boolean> {
@@ -177,6 +217,8 @@ export function startDropSendSession(
   let pc: RTCPeerConnection | null = null;
   let dc: RTCDataChannel | null = null;
   let fallbackTimer = 0;
+  let p2pKeepaliveTimer = 0;
+  let lastP2pActivityAt = 0;
   let finished = false;
   let cancelled = false;
   let issuedCode = '';
@@ -190,11 +232,24 @@ export function startDropSendSession(
 
   const cleanup = (sendAbort = false) => {
     window.clearTimeout(fallbackTimer);
-    if (sendAbort && ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: 'abort' }));
-      } catch {
-        // Ignore socket teardown error
+    if (p2pKeepaliveTimer) {
+      window.clearInterval(p2pKeepaliveTimer);
+      p2pKeepaliveTimer = 0;
+    }
+    if (sendAbort) {
+      if (dc && dc.readyState === 'open') {
+        try {
+          dc.send(JSON.stringify({ type: 'abort' }));
+        } catch {
+          // Ignore channel teardown error
+        }
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'abort' }));
+        } catch {
+          // Ignore socket teardown error
+        }
       }
     }
     if (dc) {
@@ -274,6 +329,18 @@ export function startDropSendSession(
       sendSignal({ type: 'transport_mode', mode: 'relay' });
     } else {
       sendSignal({ type: 'transport_mode', mode: 'p2p' });
+      lastP2pActivityAt = performance.now();
+      p2pKeepaliveTimer = window.setInterval(() => {
+        if (
+          !finished &&
+          !cancelled &&
+          dc &&
+          dc.readyState === 'open' &&
+          performance.now() - lastP2pActivityAt < P2P_SIGNAL_KEEPALIVE_MS * 2
+        ) {
+          sendSignal({ type: 'keepalive' });
+        }
+      }, P2P_SIGNAL_KEEPALIVE_MS);
     }
 
     cb.onTransportSelected(mode, cryptoSession.fingerprint);
@@ -330,11 +397,17 @@ export function startDropSendSession(
         if (cancelled || finished) return;
         const buf = new Uint8Array(wire.byteLength);
         buf.set(wire);
-        if (mode === 'p2p' && dc && dc.readyState === 'open') {
+        if (mode === 'p2p') {
+          if (!dc || dc.readyState !== 'open') {
+            throw new Error('DataChannel closed');
+          }
           await waitForDcDrain(dc, () => cancelled || finished);
+          if (cancelled || finished) return;
           dc.send(buf);
+          lastP2pActivityAt = performance.now();
         } else if (ws && ws.readyState === WebSocket.OPEN) {
           await waitForWsDrain(ws, () => cancelled || finished);
+          if (cancelled || finished) return;
           ws.send(buf);
         } else {
           throw new Error('Transport closed');
@@ -427,9 +500,22 @@ export function startDropSendSession(
           try {
             const parsed = JSON.parse(ev.data) as { type?: string; mac?: string };
             if (parsed.type === 'done') handleDoneAckMessage(parsed.mac);
+            else if (parsed.type === 'abort') fail('aborted', false);
           } catch {
             // Ignore
           }
+        }
+      };
+
+      dc.onclose = () => {
+        if (transportChosen === 'p2p' && !finished && !cancelled) {
+          fail('peer_disconnected', false);
+        }
+      };
+
+      dc.onerror = () => {
+        if (transportChosen === 'p2p' && !finished && !cancelled) {
+          fail('peer_disconnected', false);
         }
       };
 
@@ -545,11 +631,22 @@ export function startDropSendSession(
         break;
       }
       case 'peer_disconnected': {
+        if (transportChosen === 'p2p' && dc && dc.readyState === 'open') break;
         if (!finished) fail('peer_disconnected', false);
         break;
       }
       case 'error': {
-        fail(mapServerErrorCode(msg.code), false);
+        if (
+          msg.code === 'idle_timeout' &&
+          transportChosen === 'p2p' &&
+          dc &&
+          dc.readyState === 'open'
+        ) {
+          break;
+        }
+        const mapped = mapServerErrorCode(msg.code);
+        if (mapped === 'unauthorized') cb.onUnauthorized?.();
+        fail(mapped, false);
         break;
       }
     }
@@ -569,6 +666,8 @@ export function startDropSendSession(
         void checkIfUnauthorized(cb.onUnauthorized).then((unauth) => {
           fail(unauth ? 'unauthorized' : 'network_error', false);
         });
+      } else if (transportChosen === 'p2p' && dc && dc.readyState === 'open') {
+        // Direct DataChannel remains open and carries AEAD chunks + final authenticated `done` ACK independently
       } else {
         fail('peer_disconnected', false);
       }
@@ -604,6 +703,9 @@ export function startDropReceiveSession(
   const blobSegments: Blob[] = [];
   const pendingIce: RTCIceCandidateInit[] = [];
   let announcedTransport = false;
+  let activeTransport: 'p2p' | 'relay' | null = null;
+  let p2pKeepaliveTimer = 0;
+  let lastP2pActivityAt = 0;
 
   const flushFileChunksToBlobSegment = () => {
     if (collectedChunks.length === 0) return;
@@ -619,11 +721,24 @@ export function startDropReceiveSession(
   };
 
   const cleanup = (sendAbort = false) => {
-    if (sendAbort && ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: 'abort' }));
-      } catch {
-        // Ignore
+    if (p2pKeepaliveTimer) {
+      window.clearInterval(p2pKeepaliveTimer);
+      p2pKeepaliveTimer = 0;
+    }
+    if (sendAbort) {
+      if (dc && dc.readyState === 'open') {
+        try {
+          dc.send(JSON.stringify({ type: 'abort' }));
+        } catch {
+          // Ignore
+        }
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'abort' }));
+        } catch {
+          // Ignore
+        }
       }
     }
     if (dc) {
@@ -677,7 +792,11 @@ export function startDropReceiveSession(
     }
     if (!announcedTransport) {
       announcedTransport = true;
+      activeTransport = source;
       cb.onTransportSelected(source, cryptoSession.fingerprint);
+    }
+    if (source === 'p2p') {
+      lastP2pActivityAt = performance.now();
     }
 
     try {
@@ -846,7 +965,22 @@ export function startDropReceiveSession(
         if (!announcedTransport && cryptoSession) {
           const mode = msg.mode === 'p2p' ? 'p2p' : 'relay';
           announcedTransport = true;
+          activeTransport = mode;
           cb.onTransportSelected(mode, cryptoSession.fingerprint);
+          if (mode === 'p2p' && !p2pKeepaliveTimer) {
+            lastP2pActivityAt = performance.now();
+            p2pKeepaliveTimer = window.setInterval(() => {
+              if (
+                !finished &&
+                !cancelled &&
+                dc &&
+                dc.readyState === 'open' &&
+                performance.now() - lastP2pActivityAt < P2P_SIGNAL_KEEPALIVE_MS * 2
+              ) {
+                sendSignal({ type: 'keepalive' });
+              }
+            }, P2P_SIGNAL_KEEPALIVE_MS);
+          }
         }
         break;
       }
@@ -862,6 +996,23 @@ export function startDropReceiveSession(
             dc.onmessage = (mEv) => {
               if (mEv.data instanceof ArrayBuffer) {
                 handleEncryptedBinaryFrame(mEv.data, 'p2p');
+              } else if (typeof mEv.data === 'string') {
+                try {
+                  const parsed = JSON.parse(mEv.data) as { type?: string };
+                  if (parsed.type === 'abort') fail('aborted', false);
+                } catch {
+                  // Ignore
+                }
+              }
+            };
+            dc.onclose = () => {
+              if (activeTransport === 'p2p' && !finished && !cancelled) {
+                fail('peer_disconnected', false);
+              }
+            };
+            dc.onerror = () => {
+              if (activeTransport === 'p2p' && !finished && !cancelled) {
+                fail('peer_disconnected', false);
               }
             };
           };
@@ -898,11 +1049,22 @@ export function startDropReceiveSession(
         break;
       }
       case 'peer_disconnected': {
+        if (activeTransport === 'p2p' && dc && dc.readyState === 'open') break;
         if (!finished) fail('peer_disconnected', false);
         break;
       }
       case 'error': {
-        fail(mapServerErrorCode(msg.code), false);
+        if (
+          msg.code === 'idle_timeout' &&
+          activeTransport === 'p2p' &&
+          dc &&
+          dc.readyState === 'open'
+        ) {
+          break;
+        }
+        const mapped = mapServerErrorCode(msg.code);
+        if (mapped === 'unauthorized') cb.onUnauthorized?.();
+        fail(mapped, false);
         break;
       }
     }
@@ -922,6 +1084,8 @@ export function startDropReceiveSession(
         void checkIfUnauthorized(cb.onUnauthorized).then((unauth) => {
           fail(unauth ? 'unauthorized' : 'network_error', false);
         });
+      } else if (activeTransport === 'p2p' && dc && dc.readyState === 'open') {
+        // Direct DataChannel remains open and carries AEAD chunks + final authenticated `done` ACK independently
       } else {
         fail('peer_disconnected', false);
       }

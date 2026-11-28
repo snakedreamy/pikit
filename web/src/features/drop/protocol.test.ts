@@ -18,6 +18,7 @@ import {
   normalizeSixDigitCode,
   sanitizeTransferFileName,
 } from './protocol';
+import { waitForDcDrain } from './session';
 
 describe('/drop end-to-end cryptographic protocol (X25519 + PIN HKDF + mutual MAC + chunked AEAD)', () => {
   it('completes mutual key confirmation and multi-chunk 64 KiB AEAD streaming when 6-digit codes match', () => {
@@ -183,5 +184,40 @@ describe('/drop end-to-end cryptographic protocol (X25519 + PIN HKDF + mutual MA
       eofBytes.byteLength
     );
     expect(wireBytes).toBeLessThanOrEqual(computeDropMaxWireBytes(1));
+  });
+
+  it('holds WebRTC DataChannel backpressure across multiple ticks until bufferedAmount drops below high-water mark', async () => {
+    const listeners = new Map<string, Set<() => void>>();
+    const mockDc = {
+      bufferedAmount: 1024 * 1024, // 1 MiB (> 512 KiB high-water)
+      bufferedAmountLowThreshold: 0,
+      readyState: 'open' as RTCDataChannelState,
+      addEventListener(type: string, cb: EventListenerOrEventListenerObject) {
+        const fn = cb as () => void;
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type)!.add(fn);
+      },
+      removeEventListener(type: string, cb: EventListenerOrEventListenerObject) {
+        listeners.get(type)?.delete(cb as () => void);
+      },
+    };
+
+    // Drain gradually over ~90ms (> old single 40ms timeout) so a single-wait bug would return too early
+    const step1 = setTimeout(() => {
+      mockDc.bufferedAmount = 768 * 1024;
+    }, 35);
+    const step2 = setTimeout(() => {
+      mockDc.bufferedAmount = 128 * 1024;
+      for (const fn of listeners.get('bufferedamountlow') ?? []) fn();
+    }, 85);
+
+    await waitForDcDrain(mockDc, () => false, 500);
+    clearTimeout(step1);
+    clearTimeout(step2);
+    expect(mockDc.bufferedAmount).toBeLessThanOrEqual(512 * 1024);
+
+    // And throws if the send queue stays completely stalled past stallTimeoutMs
+    mockDc.bufferedAmount = 1024 * 1024;
+    await expect(waitForDcDrain(mockDc, () => false, 60)).rejects.toThrow(/stalled/);
   });
 });
